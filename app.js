@@ -685,7 +685,7 @@
                             </div>
                             ${data.active ? `
                             <div class="file-actions" style="width: 100%;">
-                                <input type="text" id="injectQ-${data.id}" placeholder="Type hidden prompt or reply..." style="flex: 1; padding: 8px; font-size: 0.8rem; margin-right: 8px;" />
+                                <input type="text" id="injectQ-${data.id}" placeholder="Type hidden prompt to inject a question..." style="flex: 1; padding: 8px; font-size: 0.8rem; margin-right: 8px;" />
                                 <button class="btn primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="injectLiveQuestion('${data.id}')">Send</button>
                             </div>` : ''}
                         </div>`;
@@ -1387,17 +1387,32 @@
                             for (const msg of newMsgs) {
                                 state.session.seenLiveMsgs.add(msg.id);
                                 
-                                let finalQuestion = msg.text;
-                                // Hide the leader's raw prompt by refining it with AI if available
+                                // Mask the Leader's identity by using the current examiner
+                                const currentExaminer = state.session.questions[state.session.index]?.examiner || EXAMINERS[0];
+                                
+                                let finalQuestion = null;
                                 if (state.settings.useLLM && state.settings.apiKey) {
-                                    const ex = { name: 'Dr. Cruz', role: 'Technical', avatar: '💻' };
-                                    const contextText = retrieve(msg.text, 3).map(m => m.chunk.text).join('\n\n---\n\n') || state.chunks[0]?.text || '';
-                                    const refined = await llmGenerateQuestion(ex, contextText, []);
-                                    if (refined) finalQuestion = refined;
+                                    try {
+                                        const ex = { name: currentExaminer.name, role: currentExaminer.role, avatar: currentExaminer.avatar };
+                                        const contextText = retrieve(msg.text, 3).map(m => m.chunk.text).join('\n\n---\n\n') || state.chunks[0]?.text || '';
+                                        finalQuestion = await llmGenerateQuestion(ex, contextText, []);
+                                    } catch (e) {
+                                        console.warn('Failed to refine leader prompt:', e);
+                                    }
+                                }
+                                
+                                // If AI fails or is disabled, wrap the text so it doesn't look like a random chat message
+                                if (!finalQuestion) {
+                                    finalQuestion = `The panel has a follow-up question: ${msg.text}`;
                                 }
                                 
                                 const newQ = {
-                                    examiner: { id: 'hidden', name: 'Panelist', role: 'Urgent Follow-up', avatar: '🧑‍🏫' },
+                                    examiner: { 
+                                        id: 'hidden', 
+                                        name: currentExaminer.name, 
+                                        role: 'Follow-up', 
+                                        avatar: currentExaminer.avatar 
+                                    },
                                     question: finalQuestion,
                                     chunk: state.chunks[0] || { text: 'Live question' },
                                     keyword: 'custom'
@@ -1407,7 +1422,7 @@
                                 const insertIndex = Math.min(state.session.index + 1, state.session.questions.length);
                                 state.session.questions.splice(insertIndex, 0, newQ);
                             }
-                            toast('👑 The Leader has a follow-up question for you!', 'warn');
+                            toast('👑 A follow-up question has been added!', 'warn');
                             
                             // Save draft answer before re-rendering
                             const draft = $('#answerInput') ? $('#answerInput').value : '';
