@@ -1045,13 +1045,14 @@
         async function llmEvaluateAnswer(question, answer, chunkText) {
         if (!state.settings.useLLM || !state.settings.apiKey) return null;
         const system = `You are a strict but fair thesis defense panelist. ` +
-            `Evaluate the student's answer against the thesis excerpt. ` +
+            `You must evaluate the student's answer STRICTLY based on the provided thesis excerpts. ` +
+            `If the student invents facts or contradicts the excerpts, penalize the score heavily. ` +
             `The student may answer in English, Tagalog, or Taglish. Understand the answer regardless of language. ` +
             `Provide your feedback (strengths, improvements, verdict) in the SAME language the student used. ` +
             `Return STRICT JSON only, no markdown: {"score": <0-100>, "strengths": [..], "improvements": [..], "verdict": "<one sentence>"}`;
-        const user = `QUESTION: ${question}\n\nTHESIS EXCERPT:\n"""${chunkText.slice(0, 1400)}"""\n\n` +
+        const user = `QUESTION: ${question}\n\nTHESIS EXCERPTS:\n"""${chunkText.slice(0, 3500)}"""\n\n` +
             `STUDENT ANSWER:\n"""${answer.slice(0, 2000)}"""\n\n` +
-            `Score the answer from 0 to 100 based on: relevance, specificity to the thesis, completeness, and defense quality.`;
+            `Score the answer from 0 to 100 based on: relevance to the question, accuracy compared to the excerpts, completeness, and defense quality.`;
         const reply = await callLLM(system, user, 400);
         if (!reply) return null;
         try {
@@ -1240,9 +1241,13 @@
 
         const customQ = $('#customQuestion').value.trim();
         if (customQ) {
-            // Find the most relevant chunk in the thesis for this custom question
-            const bestMatch = retrieve(customQ, 1);
-            const chunk = bestMatch.length ? bestMatch[0].chunk : state.chunks[0];
+            // Find the most relevant chunks in the thesis for this custom question
+            const bestMatches = retrieve(customQ, 3);
+            const combinedText = bestMatches.length 
+                ? bestMatches.map(m => m.chunk.text).join('\n\n---\n\n') 
+                : state.chunks[0].text;
+                
+            const chunk = { text: combinedText };
             const leaderExaminer = { id: 'leader', name: 'Group Leader', role: 'Surprise Question', avatar: '👑' };
             state.session.questions.push({ examiner: leaderExaminer, question: customQ, chunk, keyword: 'custom' });
         }
@@ -1457,11 +1462,18 @@
         const btn = $('#submitAnswer');
         if (btn) { btn.disabled = true; btn.textContent = 'Evaluating…'; }
 
+        // Retrieve top 3 relevant chunks from the PDF based on the question AND the answer
+        const queryTokens = item.question + ' ' + answer;
+        const bestMatches = retrieve(queryTokens, 3);
+        const contextText = bestMatches.length 
+            ? bestMatches.map(m => m.chunk.text).join('\n\n---\n\n') 
+            : item.chunk.text;
+
         let result = null;
         if (state.settings.useLLM && state.settings.apiKey) {
-            result = await llmEvaluateAnswer(item.question, answer, item.chunk.text);
+            result = await llmEvaluateAnswer(item.question, answer, contextText);
         }
-        if (!result) result = evaluateAnswerLocal(item.question, answer, item.chunk.text);
+        if (!result) result = evaluateAnswerLocal(item.question, answer, contextText);
 
         s.lastResult = result;
         s.results.push({ examiner: item.examiner, question: item.question, answer, result, chunk: item.chunk });
