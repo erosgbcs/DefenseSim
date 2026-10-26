@@ -1027,17 +1027,18 @@
         /* ============================================================
         OPTIONAL LLM
         ============================================================ */
-        async function llmGenerateQuestion(examiner, chunkText, baseQuestion, chapters = []) {
+        async function llmGenerateQuestion(examiner, chunkText, chapters = []) {
         if (!state.settings.useLLM || !state.settings.apiKey) return null;
         const chapterCtx = chapters.length ? `Focus the question on content relevant to: ${chapters.join(', ')}. ` : '';
-        const system = `You are ${examiner.name}, a thesis defense panelist specializing in ${examiner.role}. ` +
+        const system = `You are ${examiner.name}, a strict thesis defense panelist specializing in ${examiner.role}. ` +
             `${chapterCtx}` +
-            `Ask ONE pointed, specific defense question based strictly on the provided thesis excerpt. ` +
-            `You may ask the question in English or Tagalog/Taglish depending on the thesis language. ` +
-            `Do not invent facts. Keep it under 45 words. Return plain text only, no quotes.`;
-        const user = `THESIS EXCERPT:\n"""${chunkText.slice(0, 1400)}"""\n\n` +
-            `A generic question about this would be: "${baseQuestion}"\n` +
-            `Now write a sharper, more specific version that references the excerpt.`;
+            `Read the provided thesis excerpt carefully. ` +
+            `Ask ONE highly specific, challenging defense question based STRICTLY on the details, facts, and concepts written in the excerpt. ` +
+            `Do not ask generic questions. Probe the student's exact methodology, findings, or reasoning mentioned in the text. ` +
+            `You may ask the question in English or Tagalog/Taglish. ` +
+            `Keep it under 45 words. Return plain text only, no quotes.`;
+        const user = `THESIS EXCERPT:\n"""${chunkText.slice(0, 3000)}"""\n\n` +
+            `Based on this excerpt, write a specific defense question related to ${examiner.role}.`;
         const reply = await callLLM(system, user, 180);
         return reply ? reply.trim().replace(/^["']|["']$/g, '') : null;
         }
@@ -1170,7 +1171,8 @@
                         // Hide the leader's raw prompt by refining it with AI if available
                         if (state.settings.useLLM && state.settings.apiKey) {
                             const ex = { name: 'Dr. Cruz', role: 'Technical', avatar: '💻' };
-                            const refined = await llmGenerateQuestion(ex, state.chunks[0]?.text || '', msg.text);
+                            const contextText = retrieve(msg.text, 3).map(m => m.chunk.text).join('\n\n---\n\n') || state.chunks[0]?.text || '';
+                            const refined = await llmGenerateQuestion(ex, contextText, []);
                             if (refined) finalQuestion = refined;
                         }
                         
@@ -1260,11 +1262,22 @@
         }
 
         if (state.settings.useLLM && state.settings.apiKey) {
-            toast('Refining questions with LLM…', '');
+            toast('Generating PDF-specific questions with LLM…', '');
             for (const q of state.session.questions) {
-            if (q.examiner.id === 'leader') continue; // Keep the leader's question exactly as typed
-            const refined = await llmGenerateQuestion(q.examiner, q.chunk.text, q.question, chapters);
-            if (refined && refined.length > 20) q.question = refined;
+                if (q.examiner.id === 'leader') continue; // Keep the leader's question exactly as typed
+                
+                // Retrieve top 3 relevant chunks based on the examiner's role and the keyword to give the LLM broad context
+                const contextQuery = q.examiner.focus.join(' ') + ' ' + q.keyword;
+                const bestMatches = retrieve(contextQuery, 3);
+                const contextText = bestMatches.length 
+                    ? bestMatches.map(m => m.chunk.text).join('\n\n---\n\n') 
+                    : q.chunk.text;
+
+                const refined = await llmGenerateQuestion(q.examiner, contextText, chapters);
+                if (refined && refined.length > 20) {
+                    q.question = refined;
+                    q.chunk.text = contextText; // Update the chunk so grading uses this same rich context!
+                }
             }
         }
 
