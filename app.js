@@ -543,57 +543,52 @@
             if (!list) return;
             list.innerHTML = '<div class="muted small">Searching for active sessions…</div>';
             
-            try {
-                const snap = await db.collection(STORE_LIVE).where('active', '==', true).get();
+            if (window.liveMonitorUnsubscribe) window.liveMonitorUnsubscribe();
+            
+            window.liveMonitorUnsubscribe = db.collection(STORE_LIVE).where('active', '==', true).onSnapshot(snap => {
                 if (snap.empty) {
                     list.innerHTML = '<div class="empty-state">No active defenses right now.</div>';
-                } else {
-                    list.innerHTML = snap.docs.map(d => {
-                        const data = d.data();
-                        const chat = data.chat || [];
-                        const chatHTML = chat.map(m => `
-                            <div style="margin-bottom: 4px; font-size: 0.8rem;">
-                                <strong>${m.sender === 'member' ? 'Student' : 'You'}:</strong> ${escapeHtml(m.text)}
-                            </div>
-                        `).join('');
-                        
-                        return `
-                        <div class="doc-item" style="flex-direction: column; align-items: stretch; margin-bottom: 10px;">
-                            <div style="display:flex; justify-content:space-between; margin-bottom: 8px;">
-                                <div class="file-name">${escapeHtml(data.email)}</div>
-                            </div>
-                            <div id="liveChat-${d.id}" style="max-height: 150px; overflow-y: auto; background: var(--bg-soft); padding: 8px; border-radius: 8px; margin-bottom: 8px;">
-                                ${chatHTML || '<div class="muted small">No messages yet.</div>'}
-                            </div>
-                            <div class="file-actions" style="width: 100%;">
-                                <input type="text" id="injectQ-${d.id}" placeholder="Type hidden prompt or reply..." style="flex: 1; padding: 8px; font-size: 0.8rem; margin-right: 8px;" />
-                                <button class="btn primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="injectLiveQuestion('${d.id}')">Send</button>
-                            </div>
-                        </div>`;
-                    }).join('');
+                    return;
                 }
-            } catch (e) {
-                list.innerHTML = `<div class="muted small">Error: ${e.message}</div>`;
-            }
+                
+                // Save current inputs so the admin doesn't lose their draft when a new message arrives
+                const currentInputs = {};
+                snap.docs.forEach(d => {
+                    const inp = document.getElementById('injectQ-' + d.id);
+                    if (inp) currentInputs[d.id] = inp.value;
+                });
 
-            // Listen for changes to update the chat automatically
-            if (window.liveMonitorUnsubscribe) window.liveMonitorUnsubscribe();
-            window.liveMonitorUnsubscribe = db.collection(STORE_LIVE).where('active', '==', true).onSnapshot(snap => {
-                snap.docChanges().forEach(change => {
-                    if (change.type === 'modified') {
-                        const d = change.doc;
-                        const data = d.data();
-                        const chatContainer = document.getElementById(`liveChat-${d.id}`);
-                        if (chatContainer) {
-                            const chat = data.chat || [];
-                            chatContainer.innerHTML = chat.map(m => `
-                                <div style="margin-bottom: 4px; font-size: 0.8rem;">
-                                    <strong>${m.sender === 'member' ? 'Student' : 'You'}:</strong> ${escapeHtml(m.text)}
-                                </div>
-                            `).join('');
-                            chatContainer.scrollTop = chatContainer.scrollHeight;
-                        }
-                    }
+                list.innerHTML = snap.docs.map(d => {
+                    const data = d.data();
+                    const chat = data.chat || [];
+                    const chatHTML = chat.map(m => `
+                        <div style="margin-bottom: 4px; font-size: 0.8rem;">
+                            <strong>${m.sender === 'member' ? 'Student' : 'You'}:</strong> ${escapeHtml(m.text)}
+                        </div>
+                    `).join('');
+                    
+                    return `
+                    <div class="doc-item" style="flex-direction: column; align-items: stretch; margin-bottom: 10px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 8px;">
+                            <div class="file-name">${escapeHtml(data.email)}</div>
+                        </div>
+                        <div id="liveChat-${d.id}" style="max-height: 150px; overflow-y: auto; background: var(--bg-soft); padding: 8px; border-radius: 8px; margin-bottom: 8px;">
+                            ${chatHTML || '<div class="muted small">No messages yet.</div>'}
+                        </div>
+                        <div class="file-actions" style="width: 100%;">
+                            <input type="text" id="injectQ-${d.id}" placeholder="Type hidden prompt or reply..." style="flex: 1; padding: 8px; font-size: 0.8rem; margin-right: 8px;" />
+                            <button class="btn primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="injectLiveQuestion('${d.id}')">Send</button>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                // Restore inputs and scroll chats to bottom
+                snap.docs.forEach(d => {
+                    const inp = document.getElementById('injectQ-' + d.id);
+                    if (inp && currentInputs[d.id]) inp.value = currentInputs[d.id];
+                    
+                    const chatContainer = document.getElementById('liveChat-' + d.id);
+                    if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
                 });
             });
         }
@@ -1205,7 +1200,11 @@
                         state.session.questions.splice(insertIndex, 0, newQ);
                     }
                     toast('👑 The Leader has a follow-up question for you!', 'warn');
+                    
+                    // Save draft answer before re-rendering
+                    const draft = $('#answerInput') ? $('#answerInput').value : '';
                     renderSession();
+                    if ($('#answerInput') && draft) $('#answerInput').value = draft;
                 }
             });
         }
@@ -1213,6 +1212,11 @@
         window.injectLiveQuestion = async (docId) => {
             const input = document.getElementById('injectQ-' + docId);
             if (!input || !input.value.trim()) return;
+            
+            // Prevent double-clicks
+            const btn = input.nextElementSibling;
+            if (btn) btn.disabled = true;
+
             await db.collection(STORE_LIVE).doc(docId).update({
                 chat: firebase.firestore.FieldValue.arrayUnion({
                     id: Date.now().toString() + Math.random().toString(),
@@ -1220,8 +1224,10 @@
                     text: input.value.trim(),
                     timestamp: Date.now()
                 })
-            });
+            }).catch(e => console.warn(e));
+            
             input.value = '';
+            if (btn) btn.disabled = false;
             toast('Reply sent!', 'ok');
         };
 
