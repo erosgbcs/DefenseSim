@@ -1390,22 +1390,7 @@
                                 // Mask the Leader's identity by using the current examiner
                                 const currentExaminer = state.session.questions[state.session.index]?.examiner || EXAMINERS[0];
                                 
-                                let finalQuestion = null;
-                                if (state.settings.useLLM && state.settings.apiKey) {
-                                    try {
-                                        const ex = { name: currentExaminer.name, role: currentExaminer.role, avatar: currentExaminer.avatar };
-                                        const contextText = retrieve(msg.text, 3).map(m => m.chunk.text).join('\n\n---\n\n') || state.chunks[0]?.text || '';
-                                        finalQuestion = await llmGenerateQuestion(ex, contextText, []);
-                                    } catch (e) {
-                                        console.warn('Failed to refine leader prompt:', e);
-                                    }
-                                }
-                                
-                                // If AI fails or is disabled, wrap the text so it doesn't look like a random chat message
-                                if (!finalQuestion) {
-                                    finalQuestion = `The panel has a follow-up question: ${msg.text}`;
-                                }
-                                
+                                // Directly pass the Leader's typed text to the member
                                 const newQ = {
                                     examiner: { 
                                         id: 'hidden', 
@@ -1413,7 +1398,7 @@
                                         role: 'Follow-up', 
                                         avatar: currentExaminer.avatar 
                                     },
-                                    question: finalQuestion,
+                                    question: msg.text,
                                     chunk: state.chunks[0] || { text: 'Live question' },
                                     keyword: 'custom'
                                 };
