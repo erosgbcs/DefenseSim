@@ -102,15 +102,18 @@
         },
         {
             id: 'technical', name: 'Dr. Cruz', role: 'Technical Implementation', avatar: '💻',
-            focus: ['system', 'javascript', 'python', 'firebase', 'firestore', 'gemini', 'groq', 'variant', 'matrix'],
+            focus: ['system', 'javascript', 'python', 'firebase', 'firestore', 'gemini', 'groq', 'variant', 'matrix', 'api', 'vercel', 'libraries', 'stack', 'database'],
             questionTemplates: [
+            'What specific programming languages and frameworks did you use to build this system, and why did you choose them?',
+            'What API did you integrate for your AI assistant, and how did you handle the API keys securely on the backend?',
+            'What is Vercel, and why did you choose it as your deployment platform for both the frontend and Python backend?',
+            'Can you explain the difference between your Vanilla JS frontend and Python backend, and how they communicate via APIs?',
+            'What database did you use, and why is it better for your POS system than a traditional SQL database?',
             'Why did you build your application in vanilla JavaScript (ES2022) without React, Vue, or Angular?',
             'Explain how your application-level localStorage.pos_order_queue syncs with Firestore when connectivity returns.',
             'Walk me through how you modeled the 0/1/2 option group variant matrix in Firestore. How do you prevent overselling on variants?',
-            'How did you implement role-based access control (Admin vs Cashier) at both the UI and Firestore security rule layers?',
-            'What specific data-science libraries in Python 3.11 did you use for your forecasting module, and how did you deploy them to Vercel?',
+            'What specific data-science libraries in Python 3.11 did you use for your forecasting module?',
             'Why did you choose Gemini as primary and Groq as fallback for your AI assistant, and how did you isolate provider errors?',
-            'Why did you choose {keyword} for your system architecture?',
             ],
             followUpTemplates: [],
         },
@@ -1032,9 +1035,10 @@
         const system = `You are ${examiner.name}, a strict thesis defense panelist specializing in ${examiner.role}. ` +
             `${chapterCtx}` +
             `Read the provided thesis excerpt carefully. ` +
-            `This project is "Kirby's Hardware POS", a Vanilla JS/Python serverless system with Firestore offline queues, a variant matrix, and AI forecasting. ` +
-            `Ask ONE highly specific, challenging defense question based STRICTLY on the technical details, statistics, or architectural claims written in the excerpt. ` +
-            `Do not ask generic questions. Probe the student's exact methodology, tech stack (e.g., Firestore, Gemini, Groq), findings, or reasoning mentioned in the text. ` +
+            `This project is "Kirby's Hardware POS", a Vanilla JS/Python serverless system with Firestore, Vercel, and AI APIs. ` +
+            `Ask ONE specific defense question based STRICTLY on the technical details written in the excerpt. ` +
+            `If the excerpt discusses the tech stack, ask fundamental but probing questions like: "What programming language did you use?", "What API did you integrate?", or "What is Vercel and why did you use it?". ` +
+            `Do not ask generic questions. Ensure the student actually understands the tools they used. ` +
             `You may ask the question in English or Tagalog/Taglish. ` +
             `Keep it under 45 words. Return plain text only, no quotes.`;
         const user = `THESIS EXCERPT:\n"""${chunkText.slice(0, 3000)}"""\n\n` +
