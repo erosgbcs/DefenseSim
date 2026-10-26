@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DefenseSim — Thesis Defense Simulator</title>
+
+<!-- ▼▼▼ FIREBASE SDK — ADD THESE TWO LINES ▼▼▼ -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<link rel="stylesheet" href="styles.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+</head>
+<body>
+
+<!-- ============ AUTH OVERLAY ============ -->
+<div class="auth-overlay" id="authOverlay">
+  <div class="auth-card">
+
+    <!-- First-time setup: create the admin (group leader) -->
+    <div id="authSetup" class="auth-view hidden">
+      <div class="auth-brand">
+        <span class="logo">◈</span>
+        <span>Defense<span class="accent">Sim</span></span>
+      </div>
+      <h1>Set up your panel</h1>
+      <p class="muted">Create the <strong>admin account (group leader)</strong> to start. You'll be able to invite members afterwards.</p>
+
+      <label>Username
+        <input type="text" id="setupUser" placeholder="e.g. leader" autocomplete="username" />
+      </label>
+      <label>Password
+        <input type="password" id="setupPass" placeholder="min 4 characters" autocomplete="new-password" />
+      </label>
+      <label>Confirm password
+        <input type="password" id="setupPass2" placeholder="repeat password" autocomplete="new-password" />
+      </label>
+
+      <button class="btn primary auth-submit" id="setupBtn">Create admin account</button>
+      <div class="auth-error" id="setupError"></div>
+    </div>
+
+    <!-- Returning login -->
+    <div id="authLogin" class="auth-view">
+      <div class="auth-brand">
+        <span class="logo">◈</span>
+        <span>Defense<span class="accent">Sim</span></span>
+      </div>
+      <h1>Sign in</h1>
+      <p class="muted">Enter your credentials to enter the defense room.</p>
+
+      <label>Username
+        <input type="text" id="loginUser" placeholder="username" autocomplete="username" />
+      </label>
+      <label>Password
+        <input type="password" id="loginPass" placeholder="password" autocomplete="current-password" />
+      </label>
+
+      <button class="btn primary auth-submit" id="loginBtn">Sign in</button>
+      <div class="auth-error" id="loginError"></div>
+
+      <p class="muted small auth-hint">
+        Don't have an account? <button class="link" id="goToRegister" type="button">Create one</button>
+      </p>
+    </div>
+
+    <!-- Registration -->
+    <div id="authRegister" class="auth-view hidden">
+      <div class="auth-brand">
+        <span class="logo">◈</span>
+        <span>Defense<span class="accent">Sim</span></span>
+      </div>
+      <h1>Create an account</h1>
+      <p class="muted">Sign up to join the defense room.</p>
+
+      <label>Email
+        <input type="email" id="registerUser" placeholder="student@example.com" autocomplete="email" />
+      </label>
+      <label>Password
+        <input type="password" id="registerPass" placeholder="min 6 characters" autocomplete="new-password" />
+      </label>
+      <label>Confirm Password
+        <input type="password" id="registerPass2" placeholder="repeat password" autocomplete="new-password" />
+      </label>
+
+      <button class="btn primary auth-submit" id="registerBtn">Create Account</button>
+      <div class="auth-error" id="registerError"></div>
+
+      <p class="muted small auth-hint">
+        Already have an account? <button class="link" id="goToLogin" type="button">Sign in</button>
+      </p>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ TOPBAR ============ -->
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">◈</span>
+    <span>Defense<span class="accent">Sim</span></span>
+  </div>
+
+  <nav class="tabs">
+    <button class="tab active" data-view="defense">Defense Room</button>
+    <button class="tab hidden" data-view="admin" id="tabAdmin">Admin</button>
+    <button class="tab" data-view="kb">Knowledge Base</button>
+  </nav>
+
+  <div class="topbar-right">
+    <div class="kb-status" id="kbStatus">No documents indexed</div>
+
+    <div class="user-chip" id="userChip" hidden>
+      <span class="user-avatar" id="userAvatar">?</span>
+      <div class="user-meta">
+        <span class="user-name" id="userName">—</span>
+        <span class="user-role" id="userRole">—</span>
+      </div>
+      <button class="icon-btn" id="logoutBtn" title="Sign out">⎋</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ DEFENSE VIEW ============ -->
+  <section id="view-defense" class="view active">
+
+    <div class="panel" id="setupPanel">
+      <h2>Configure your defense</h2>
+      <p class="muted">
+        Your uploaded thesis becomes the source of truth. Examiners will probe the sections
+        that actually exist in your document — not generic questions.
+      </p>
+
+      <div class="grid">
+        <label>Number of questions
+          <input type="number" id="numQuestions" min="3" max="20" value="6" />
+        </label>
+        <label>Time per question (seconds, 0 = off)
+          <input type="number" id="timePerQ" min="0" max="900" step="30" value="180" />
+        </label>
+
+        <label>Leader's Surprise Question (Optional)
+          <input type="text" id="customQuestion" placeholder="e.g., Explain your system architecture." />
+        </label>
+      </div>
+
+      <h3>Chapters to cover</h3>
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-top: 10px;">
+        <label class="switch" style="margin:0;">
+          <input type="checkbox" id="chapter1" checked />
+          <span>Chapter 1</span>
+        </label>
+        <label class="switch" style="margin:0;">
+          <input type="checkbox" id="chapter2" checked />
+          <span>Chapter 2</span>
+        </label>
+        <label class="switch" style="margin:0;">
+          <input type="checkbox" id="chapter3" checked />
+          <span>Chapter 3</span>
+        </label>
+        <label class="switch" style="margin:0;">
+          <input type="checkbox" id="chapter4" checked />
+          <span>Chapter 4</span>
+        </label>
+      </div>
+
+      <div class="row">
+        <button class="btn primary" id="startBtn">Begin Defense</button>
+        <span class="muted small" id="startHint"></span>
+      </div>
+    </div>
+
+    <div class="panel hidden" id="sessionPanel"></div>
+
+  </section>
+
+  <!-- ============ ADMIN VIEW ============ -->
+  <section id="view-admin" class="view">
+
+    <div class="panel">
+      <h2>Admin — Knowledge Base Ingestion</h2>
+      <p class="muted">
+        Upload your thesis, related literature, or defense notes. Text is extracted, chunked
+        and indexed <strong>locally in your browser</strong> (IndexedDB).
+      </p>
+
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" multiple hidden
+               accept=".pdf,.docx,.txt,.md,.markdown,.csv,.json" />
+        <div class="dz-icon">⬆</div>
+        <p><strong>Drop files here</strong> or <button class="link" id="browseBtn" type="button">browse files</button></p>
+        <p class="muted small">PDF · DOCX · TXT · MD · CSV · JSON</p>
+      </div>
+
+      <div class="status-line" id="uploadStatus"></div>
+
+      <h3>Indexed documents</h3>
+      <div class="doc-list" id="docList"></div>
+
+      <div class="row">
+        <button class="btn danger" id="clearAllBtn">Clear entire knowledge base</button>
+      </div>
+    </div>
+
+    <!-- MEMBERS MANAGEMENT (admin only) -->
+    <div class="panel">
+      <h2>Member accounts</h2>
+      <p class="muted">
+        Create login credentials for group members. Members can access the Defense Room and
+        Knowledge Base, but not the Admin tab or AI settings.
+      </p>
+
+      <div class="grid">
+        <label>Username
+          <input type="text" id="newMemberUser" placeholder="e.g. maria" autocomplete="off" />
+        </label>
+        <label>Password
+          <input type="password" id="newMemberPass" placeholder="min 4 characters" autocomplete="new-password" />
+        </label>
+      </div>
+
+      <div class="row">
+        <button class="btn primary" id="createMemberBtn">Create member account</button>
+        <span class="muted small" id="memberStatus"></span>
+      </div>
+
+      <h3>Existing accounts</h3>
+      <div class="member-list" id="memberList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>AI Engine Settings</h2>
+
+      <label class="switch">
+        <input type="checkbox" id="useLLM" />
+        <span>Use external LLM (OpenAI-compatible API)</span>
+      </label>
+
+      <div class="grid">
+        <label>Provider
+          <select id="llmProvider">
+            <option value="openai">OpenAI / compatible</option>
+            <option value="groq">Groq</option>
+            <option value="gemini">Google Gemini</option>
+          </select>
+        </label>
+        <label>API endpoint
+          <input type="text" id="endpoint" placeholder="https://api.openai.com/v1/chat/completions" />
+        </label>
+        <label>Model
+          <input type="text" id="model" placeholder="gpt-4o-mini" />
+        </label>
+        <label>API key
+          <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off" />
+        </label>
+      </div>
+
+      <p class="muted small">
+        Without an API key, DefenseSim runs <strong>fully offline</strong> using its built-in
+        TF‑IDF retrieval + rule-based examiner engine. The key is stored only in this browser's
+        localStorage.
+      </p>
+
+      <div class="row">
+        <button class="btn primary" id="saveSettings">Save settings</button>
+        <span class="muted small" id="settingsStatus"></span>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ============ KNOWLEDGE BASE VIEW ============ -->
+  <section id="view-kb" class="view">
+    <div class="panel">
+      <h2>Knowledge Base</h2>
+      <p class="muted">Search what the examiners can "read". This is exactly what the RAG retriever sees.</p>
+
+      <div class="row">
+        <input type="text" id="kbSearch" class="grow" placeholder="Search your thesis… e.g. 'sampling method', 'accuracy', 'limitations'" />
+        <button class="btn" id="kbSearchBtn">Search</button>
+        <button class="btn ghost" id="kbResetBtn">Reset</button>
+      </div>
+
+      <div id="kbResults" class="chunk-list"></div>
+    </div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
