@@ -1469,3 +1469,10 @@
         width: 100%;
         margin: 10px 0;
         }
+
+        /* Limit the height of the Live Monitor list so it scrolls internally */
+        #liveMonitorList {
+            max-height: 450px;
+            overflow-y: auto;
+            padding-right: 8px;
+        }

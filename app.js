@@ -26,11 +26,12 @@
             measurementId: "G-B062MQKENP"
             };
 
-            const STORE_DOCS   = 'defensesim_documents';
-            const STORE_CHUNKS = 'defensesim_chunks';
-            const STORE_USERS  = 'defensesim_users';
-            const STORE_LIVE   = 'defensesim_live';
-            const LEADER_EMAIL = 'gabrielagsamosam@gmail.com';
+            const STORE_DOCS     = 'defensesim_documents';
+            const STORE_CHUNKS   = 'defensesim_chunks';
+            const STORE_USERS    = 'defensesim_users';
+            const STORE_LIVE     = 'defensesim_live';
+            const STORE_SETTINGS = 'defensesim_settings';
+            const LEADER_EMAIL   = 'gabrielagsamosam@gmail.com';
 
             const CHUNK_SIZE     = 900;
             const CHUNK_OVERLAP  = 120;
@@ -38,6 +39,7 @@
             const BATCH_LIMIT    = 500;
 
             const SETTINGS_KEY = 'defensesim-settings';
+            const LIVE_TTL_MS  = 60 * 60 * 1000; // 1 hour — live sessions auto-expire
 
             /* ============================================================
             EXAMINERS
@@ -503,6 +505,7 @@
                     toast(`Signed in as ${user.email}.`, 'ok');
                     
                     await reloadKB();
+                    await loadSettingsFromDB();
                     updateStartHint();
                 } catch (err) {
                     console.error('Failed to fetch user role:', err);
@@ -537,16 +540,63 @@
                 $$('.view').forEach((v) => v.classList.toggle('active', v.id === viewId));
                 if (btn.dataset.view === 'kb') renderKB();
                 if (btn.dataset.view === 'admin') {
-                    renderLiveMonitor();
+                    // Prune sessions older than 1 hour, then open the realtime monitor
+                    cleanupOldLiveSessions().finally(() => renderLiveMonitor());
+                    
                     // Bind search listener once
                     const searchInp = $('#liveMonitorSearch');
                     if (searchInp && !searchInp.dataset.bound) {
                         searchInp.addEventListener('input', displayLiveMonitor);
                         searchInp.dataset.bound = 'true';
                     }
+                    
+                    // Bind clear ended button once
+                    const clearBtn = $('#clearEndedLiveBtn');
+                    if (clearBtn && !clearBtn.dataset.bound) {
+                        clearBtn.addEventListener('click', async () => {
+                            if (!confirm('Delete all ENDED defense sessions from the database?')) return;
+                            try {
+                                const snap = await db.collection(STORE_LIVE).where('active', '==', false).get();
+                                if (snap.empty) return toast('No ended sessions to clear.', 'warn');
+                                const batch = db.batch();
+                                snap.docs.forEach(d => batch.delete(d.ref));
+                                await batch.commit();
+                                toast('Ended sessions cleared.', 'ok');
+                            } catch (e) {
+                                toast('Failed to clear: ' + e.message, 'err');
+                            }
+                        });
+                        clearBtn.dataset.bound = 'true';
+                    }
                 }
                 });
             });
+            }
+
+            /* Prune live session docs older than LIVE_TTL_MS.
+               Runs on every Admin tab open — cheap (1 query + 1 batch delete per run). */
+            async function cleanupOldLiveSessions() {
+                if (!firebaseReady) return;
+                try {
+                    const now = firebase.firestore.Timestamp.now();
+                    const snap = await db.collection(STORE_LIVE)
+                        .where('expireAt', '<', now)
+                        .get();
+
+                    // Never delete the session currently running in *this* tab
+                    const skipId = state.session?.liveId;
+                    const toDelete = snap.docs.filter(d => d.id !== skipId);
+                    if (!toDelete.length) return;
+
+                    for (let i = 0; i < toDelete.length; i += BATCH_LIMIT) {
+                        const batch = db.batch();
+                        toDelete.slice(i, i + BATCH_LIMIT).forEach(d => batch.delete(d.ref));
+                        await batch.commit();
+                    }
+                    console.log(`Pruned ${toDelete.length} live session(s) older than 1 hour.`);
+                } catch (err) {
+                    console.warn('Live session cleanup failed:', err);
+                }
             }
 
             async function renderLiveMonitor() {
@@ -935,6 +985,28 @@
             $('#model').value    = state.settings.model || '';
             $('#apiKey').value   = state.settings.apiKey || '';
             }
+
+            /* Load AI settings from Firestore (source of truth). Falls back to cached values. */
+            async function loadSettingsFromDB() {
+            if (!firebaseReady) return;
+            try {
+                const snap = await db.collection(STORE_SETTINGS).doc('global').get();
+                if (snap.exists) {
+                    Object.assign(state.settings, snap.data());
+                    // Refresh the localStorage cache so the next boot is instant
+                    localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+                }
+                // Sync the UI to whatever we now have in state
+                $('#useLLM').checked = !!state.settings.useLLM;
+                $('#llmProvider').value = state.settings.provider || 'openai';
+                $('#endpoint').value = state.settings.endpoint || '';
+                $('#model').value    = state.settings.model || '';
+                $('#apiKey').value   = state.settings.apiKey || '';
+                updateStartHint();
+            } catch (err) {
+                console.error('Failed to load settings from DB:', err);
+            }
+            }
             function initSettings() {
             const PROVIDER_DEFAULTS = {
                 openai: {
@@ -964,17 +1036,30 @@
                 }
             });
 
-            $('#saveSettings').addEventListener('click', () => {
+            $('#saveSettings').addEventListener('click', async () => {
                 state.settings.useLLM   = $('#useLLM').checked;
                 state.settings.provider = $('#llmProvider').value;
                 state.settings.endpoint = $('#endpoint').value.trim();
                 state.settings.model    = $('#model').value.trim();
                 state.settings.apiKey   = $('#apiKey').value.trim();
+
+                // Always cache locally first so the UI stays in sync even if the DB write fails
                 localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+
                 const s = $('#settingsStatus');
-                s.textContent = 'Saved ✓';
-                setTimeout(() => { s.textContent = ''; }, 2200);
-                toast('AI settings saved.', 'ok');
+                s.textContent = 'Saving to database…';
+
+                try {
+                    await db.collection(STORE_SETTINGS).doc('global').set(state.settings);
+                    s.textContent = 'Saved to DB ✓';
+                    setTimeout(() => { s.textContent = ''; }, 2200);
+                    toast('AI settings saved to database.', 'ok');
+                } catch (err) {
+                    console.error('Failed to save settings to DB:', err);
+                    s.textContent = '⚠ DB save failed — cached locally only';
+                    toast('DB save failed (cached locally): ' + err.message, 'err');
+                }
+                updateStartHint();
             });
             }
 
@@ -1017,52 +1102,16 @@
             function updateStartHint() {
             const hint = $('#startHint');
             const hasDocs = state.chunks.length > 0;
+            const hasLLM = state.settings.useLLM && state.settings.apiKey;
             const btn = $('#startBtn');
             if (!hasDocs) { hint.textContent = 'Upload a document in the Admin tab first.'; btn.disabled = true; return; }
+            if (!hasLLM) { hint.textContent = 'Enable and configure the LLM in Admin → AI Engine Settings first.'; btn.disabled = true; return; }
             btn.disabled = false;
-            hint.textContent = `${state.chunks.length} indexed chunks ready.`;
+            hint.textContent = `${state.chunks.length} indexed chunks ready · LLM active.`;
             }
 
-            /* ============================================================
-            KEYWORD EXTRACTION & QUESTION GENERATION
-            ============================================================ */
-            function pickKeyword(text, focusWords = []) {
-            const tokens = tokenize(text);
-            if (!tokens.length) return 'your study';
-            const freq = {};
-            tokens.forEach((t) => { freq[t] = (freq[t] || 0) + 1; });
-            let best = null, bestScore = -1;
-            for (const t of Object.keys(freq)) {
-                let score = freq[t] * (state.idf[t] || 1);
-                if (focusWords.some((f) => t.includes(f) || f.includes(t))) score *= 2.2;
-                if (t.length < 4) score *= 0.5;
-                if (score > bestScore) { bestScore = score; best = t; }
-            }
-            if (!best) return 'your study';
-            const phraseMatch = text.match(new RegExp(`\\b(\\w+\\s+){0,2}${escapeRegex(best)}(\\s+\\w+){0,2}\\b`, 'i'));
-            if (phraseMatch && phraseMatch[0].length <= 60) {
-                const phrase = phraseMatch[0].trim();
-                if (phrase.split(/\s+/).length >= 1) return phrase.toLowerCase();
-            }
-            return best;
-            }
 
-            function generateQuestion(examiner, usedChunkIds, qIndex) {
-            const available = state.chunks.filter((c) => !usedChunkIds.has(c.id));
-            const pool = available.length ? available : state.chunks;
-            const scored = pool.map((c) => {
-                const tokens = tokenize(c.text);
-                const hits = examiner.focus.filter((f) => tokens.some((t) => t.includes(f) || f.includes(t))).length;
-                return { chunk: c, relevance: hits + Math.random() * 0.4 };
-            });
-            scored.sort((a, b) => b.relevance - a.relevance);
-            const chosen = scored[0].chunk;
-            usedChunkIds.add(chosen.id);
-            const keyword = pickKeyword(chosen.text, examiner.focus);
-            const template = examiner.questionTemplates[qIndex % examiner.questionTemplates.length];
-            const question = template.replace(/\{keyword\}/g, keyword);
-            return { question, chunk: chosen, keyword };
-            }
+
 
             /* ============================================================
             OPTIONAL LLM
@@ -1070,15 +1119,17 @@
             async function llmGenerateQuestion(examiner, chunkText, chapters = []) {
             if (!state.settings.useLLM || !state.settings.apiKey) return null;
             const chapterCtx = chapters.length ? `Focus the question on content relevant to: ${chapters.join(', ')}. ` : '';
-            const system = `You are ${examiner.name}, a strict thesis defense panelist specializing in ${examiner.role}. ` +
+            const system = `You are ${examiner.name}, a thesis defense panelist specializing in ${examiner.role}. ` +
                 `${chapterCtx}` +
-                `Read the provided thesis excerpt carefully. ` +
-                `This project is "Kirby's Hardware POS", a Vanilla JS/Python serverless system with Firestore, Vercel, and AI APIs. ` +
-                `Ask ONE specific defense question based STRICTLY on the technical details written in the excerpt. ` +
-                `If the excerpt discusses the tech stack, ask fundamental but probing questions like: "What programming language did you use?", "What API did you integrate?", or "What is Vercel and why did you use it?". ` +
-                `Do not ask generic questions. Ensure the student actually understands the tools they used. ` +
-                `You may ask the question in English or Tagalog/Taglish. ` +
-                `Keep it under 45 words. Return plain text only, no quotes.`;
+                `Read the thesis excerpt below. Your goal is to ask ONE clear, highly understandable question to test if the student truly understands their own work. ` +
+                `The project is "Kirby's Hardware POS" (Vanilla JS/Python, Firestore, Vercel, AI APIs). ` +
+                `Rules for your question:\n` +
+                `1. Keep it conversational, direct, and easy to understand (avoid dense academic jargon).\n` +
+                `2. Base it STRICTLY on a specific detail from the text (e.g., "You mentioned [X]. Can you explain why...").\n` +
+                `3. Ask only ONE thing at a time. Do not combine multiple questions into one long sentence.\n` +
+                `4. Keep it under 35 words.\n` +
+                `5. You may ask in English or Tagalog/Taglish.\n` +
+                `Return plain text only, no quotes.`;
             const user = `THESIS EXCERPT:\n"""${chunkText.slice(0, 3000)}"""\n\n` +
                 `Based on this excerpt, write a specific defense question related to ${examiner.role}.`;
             const reply = await callLLM(system, user, 180);
@@ -1138,69 +1189,6 @@
             }
 
             /* ============================================================
-            RULE-BASED ANSWER EVALUATION
-            ============================================================ */
-            function evaluateAnswerLocal(question, answer, chunkText) {
-            const ans = (answer || '').trim();
-            const wordCount = ans.split(/\s+/).filter(Boolean).length;
-            const answerTokens = new Set(tokenize(ans));
-            const chunkTokens = new Set(tokenize(chunkText));
-            const qTokens = new Set(tokenize(question));
-
-            let qHits = 0; qTokens.forEach((t) => { if (answerTokens.has(t)) qHits++; });
-            const qCoverage = qTokens.size ? qHits / qTokens.size : 0;
-
-            let cHits = 0; chunkTokens.forEach((t) => { if (answerTokens.has(t)) cHits++; });
-            const grounding = chunkTokens.size ? cHits / Math.min(chunkTokens.size, 40) : 0;
-
-            const hasNumber = /\b\d+([.,]\d+)?%?\b/.test(ans);
-            const hasEvidence = /\b(because|therefore|thus|hence|since|due to|as shown|according to|data shows|results indicate|studies|literature|dahil|kaya|samakatuwid|ayon sa|ipinapakita|base sa|resulta)\b/i.test(ans);
-            const hasStructure = /\b(first|second|third|finally|additionally|moreover|however|in contrast|una|pangalawa|pangatlo|sa huli|dagdag pa|gayunpaman|sa kabilang banda)\b/i.test(ans);
-            const hasCitation = /\([A-Z][A-Za-z\s.&,]+,\s*\d{4}\)|\bet al\.\b/.test(ans);
-            const lengthScore = Math.min(1, wordCount / 110);
-
-            let raw =
-                qCoverage * 22 + grounding * 20 + lengthScore * 26 +
-                (hasNumber ? 8 : 0) + (hasEvidence ? 12 : 0) +
-                (hasStructure ? 6 : 0) + (hasCitation ? 6 : 0);
-
-            const score = Math.round(Math.max(0, Math.min(100, raw)));
-
-            const strengths = [], improvements = [];
-            if (wordCount >= 80) strengths.push('Sufficiently developed response.');
-            else improvements.push('Answer is too brief — a strong defense response is 80–150 words.');
-            if (qCoverage > 0.4) strengths.push("Directly addresses the examiner's question.");
-            else improvements.push('Restate the question in your opening sentence and answer it head-on.');
-            if (grounding > 0.15) strengths.push('Anchored in your actual thesis content.');
-            else improvements.push('Ground your answer in specific sections, tables, or findings from your document.');
-            if (hasEvidence) strengths.push('Uses evidence-based language (because, therefore, results indicate).');
-            else improvements.push('Add causal or evidentiary connectives: "because", "the results indicate".');
-            if (hasNumber) strengths.push('Includes concrete quantitative detail.');
-            else improvements.push('Include a number: sample size, p-value, accuracy, percentage, or effect size.');
-            if (hasStructure) strengths.push('Well-organized with clear signposting.');
-            else improvements.push('Structure your answer: "First… Second… Finally…"');
-            if (hasCitation) strengths.push('References supporting literature.');
-            else improvements.push('Cite a source — even "as noted in my literature review" strengthens credibility.');
-
-            const verdict =
-                score >= 80 ? 'Strong defense answer.' :
-                score >= 60 ? 'Acceptable, but could be sharper.' :
-                score >= 40 ? 'Needs more substance and specificity.' :
-                'Answer does not yet meet defense standards.';
-
-            // Fallback: Extract a relevant sentence from the PDF chunk if the answer is weak
-            let correctAnswer = '';
-            if (score < 70) {
-                const sentences = chunkText.split(/(?<=[.!?])\s+/);
-                const qWords = question.toLowerCase().match(/\b\w{4,}\b/g) || [];
-                const bestSentence = sentences.find(s => qWords.some(w => s.toLowerCase().includes(w))) || sentences[0];
-                if (bestSentence) correctAnswer = bestSentence.trim();
-            }
-
-            return { score, strengths: strengths.slice(0, 4), improvements: improvements.slice(0, 4), verdict, correctAnswer, source: 'local' };
-            }
-
-            /* ============================================================
             DEFENSE SESSION
             ============================================================ */
             function initStartButton() {
@@ -1210,36 +1198,47 @@
             async function appendNewQuestion() {
                 const s = state.session;
                 if (!s) return;
+
+                if (!state.settings.useLLM || !state.settings.apiKey) {
+                    console.warn('LLM not configured — cannot generate questions.');
+                    return;
+                }
+
                 const qIndex = s.questions.length;
                 const ex = EXAMINERS[qIndex % EXAMINERS.length];
 
-                // 1. Instantly generate a rule-based question so the user never waits
-                const { question, chunk, keyword } = generateQuestion(ex, s.usedChunkIds, qIndex);
-                const newQ = { examiner: ex, question, chunk, keyword };
+                // Build retrieval context from the examiner's focus area
+                const contextQuery = ex.focus.join(' ');
+                const bestMatches = retrieve(contextQuery, 3);
+                const contextText = bestMatches.length
+                    ? bestMatches.map(m => m.chunk.text).join('\n\n---\n\n')
+                    : (state.chunks[0]?.text || '');
+
+                let question = null;
+                try {
+                    question = await llmGenerateQuestion(ex, contextText, s.chapters || []);
+                } catch (e) {
+                    console.warn('LLM generation failed', e);
+                }
+
+                if (!question || question.length < 10) {
+                    console.warn('LLM returned no usable question.');
+                    question = `Could you explain the core methodology or technical implementation related to ${ex.role} in your system?`;
+                }
+
+                const newQ = {
+                    examiner: ex,
+                    question,
+                    chunk: { text: contextText },
+                    keyword: ''
+                };
                 s.questions.push(newQ);
 
-                // 2. Asynchronously refine it with the LLM if available
-                if (state.settings.useLLM && state.settings.apiKey) {
-                    try {
-                        const contextQuery = ex.focus.join(' ') + ' ' + keyword;
-                        const bestMatches = retrieve(contextQuery, 3);
-                        const contextText = bestMatches.length
-                            ? bestMatches.map(m => m.chunk.text).join('\n\n---\n\n')
-                            : chunk.text;
-
-                        const refined = await llmGenerateQuestion(ex, contextText, s.chapters);
-                        if (refined && refined.length > 20) {
-                            newQ.question = refined;
-                            newQ.chunk.text = contextText;
-                            
-                            // If the user is currently looking at this question, update the UI safely
-                            if (s.index === qIndex && s.phase === 'question') {
-                                const draft = $('#answerInput') ? $('#answerInput').value : '';
-                                renderSession();
-                                if ($('#answerInput') && draft) $('#answerInput').value = draft;
-                            }
-                        }
-                    } catch (e) { console.warn('LLM generation failed', e); }
+                // If the user is currently looking at this question, refresh UI safely
+                if (s.index === qIndex && s.phase === 'question') {
+                    const draft = $('#answerInput') ? $('#answerInput').value : '';
+                    renderSession();
+                    if ($('#answerInput') && draft) $('#answerInput').value = draft;
                 }
             }
 
@@ -1311,7 +1310,11 @@
 
             async function startSession() {
             if (!state.chunks.length) { toast('Upload a document first.', 'warn'); return; }
-            
+            if (!state.settings.useLLM || !state.settings.apiKey) {
+                toast('Enable and configure the LLM in Admin → AI Engine Settings first.', 'err');
+                return;
+            }
+
             const timePerQ = 180;
             const chapters = ['Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4'];
 
@@ -1328,14 +1331,33 @@
 
             // Create a live session for the leader to monitor
             try {
+                // Mark any previous active sessions by this user as inactive to prevent duplicate "LIVE" states
+                const oldSnap = await db.collection(STORE_LIVE)
+                    .where('uid', '==', state.auth.currentUser.uid)
+                    .where('active', '==', true)
+                    .get();
+                if (!oldSnap.empty) {
+                    const batch = db.batch();
+                    oldSnap.forEach(d => batch.update(d.ref, { active: false }));
+                    await batch.commit();
+                }
+
                 state.session.liveId = await dbAdd(STORE_LIVE, {
                     uid: state.auth.currentUser.uid,
                     email: state.auth.currentUser.username,
                     active: true,
                     createdAt: Date.now(),
+                    expireAt: firebase.firestore.Timestamp.fromMillis(Date.now() + LIVE_TTL_MS),
                     chat: [] // Initialize chat array
                 });
                 listenForLeaderLive(state.session.liveId);
+
+                // If the student closes the tab, mark the session as ENDED automatically
+                window.addEventListener('beforeunload', () => {
+                    if (state.session?.liveId) {
+                        db.collection(STORE_LIVE).doc(state.session.liveId).update({ active: false }).catch(() => {});
+                    }
+                });
             } catch (e) { console.warn('Live sync failed', e); }
 
             toast('Generating first questions…', 'info');
@@ -1557,7 +1579,16 @@
             if (state.settings.useLLM && state.settings.apiKey) {
                 result = await llmEvaluateAnswer(item.question, answer, contextText);
             }
-            if (!result) result = evaluateAnswerLocal(item.question, answer, contextText);
+            if (!result) {
+                result = {
+                    score: 0,
+                    strengths: [],
+                    improvements: ['LLM evaluation unavailable — check your API settings or key.'],
+                    verdict: 'Evaluation could not be completed.',
+                    correctAnswer: '',
+                    source: 'fallback'
+                };
+            }
 
             s.lastResult = result;
             s.results.push({ examiner: item.examiner, question: item.question, answer, result, chunk: item.chunk });
@@ -1605,6 +1636,15 @@
             endSessionTimer();
             if (!state.session) return;
             state.session.phase = 'summary';
+
+            // Mark as inactive immediately when they end the defense
+            if (state.session.liveId) {
+                db.collection(STORE_LIVE).doc(state.session.liveId).update({
+                    active: false,
+                    expireAt: firebase.firestore.Timestamp.fromMillis(Date.now() + LIVE_TTL_MS)
+                }).catch(() => {});
+            }
+
             renderSession();
             }
 
@@ -1698,8 +1738,12 @@
             endSessionTimer();
             if (state.session?.unsubscribeLive) state.session.unsubscribeLive();
             if (state.session?.liveId) {
-                // Mark as inactive instead of deleting so it stays in the admin monitor log
-                db.collection(STORE_LIVE).doc(state.session.liveId).update({ active: false }).catch(() => {});
+                // Mark inactive and extend the TTL clock by one more hour so the
+                // leader can still review it in the monitor after the defense ends.
+                db.collection(STORE_LIVE).doc(state.session.liveId).update({
+                    active: false,
+                    expireAt: firebase.firestore.Timestamp.fromMillis(Date.now() + LIVE_TTL_MS)
+                }).catch(() => {});
             }
             if (window.liveMonitorUnsubscribe) { window.liveMonitorUnsubscribe(); window.liveMonitorUnsubscribe = null; }
             state.session = null;
