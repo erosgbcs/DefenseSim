@@ -1176,14 +1176,18 @@
                             if (refined) finalQuestion = refined;
                         }
                         
-                        state.session.questions.push({
-                            examiner: { id: 'hidden', name: 'Panelist', role: 'Follow-up', avatar: '🧑‍🏫' },
+                        const newQ = {
+                            examiner: { id: 'hidden', name: 'Panelist', role: 'Urgent Follow-up', avatar: '🧑‍🏫' },
                             question: finalQuestion,
                             chunk: state.chunks[0] || { text: 'Live question' },
                             keyword: 'custom'
-                        });
+                        };
+                        
+                        // Prioritize: insert the leader's question right after the current one
+                        const insertIndex = Math.min(state.session.index + 1, state.session.questions.length);
+                        state.session.questions.splice(insertIndex, 0, newQ);
                     }
-                    toast('A panelist has asked a new question.', 'info');
+                    toast('👑 The Leader has a follow-up question for you!', 'warn');
                     renderSession();
                 }
             });
@@ -1206,8 +1210,10 @@
 
         async function startSession() {
         if (!state.chunks.length) { toast('Upload a document first.', 'warn'); return; }
-        const numQuestions = Math.max(3, Math.min(20, Number($('#numQuestions').value) || 6));
-        const timePerQ    = Math.max(0, Math.min(900, Number($('#timePerQ').value) || 0));
+        
+        // Hardcoded defaults since the configuration panel is removed
+        const numQuestions = 6;
+        const timePerQ = 180;
 
         const chapters = [];
         if ($('#chapter1').checked) chapters.push('Chapter 1');
@@ -1241,20 +1247,7 @@
             listenForLeaderLive(state.session.liveId);
         } catch (e) { console.warn('Live sync failed', e); }
 
-        const customQ = $('#customQuestion').value.trim();
-        if (customQ) {
-            // Find the most relevant chunks in the thesis for this custom question
-            const bestMatches = retrieve(customQ, 3);
-            const combinedText = bestMatches.length 
-                ? bestMatches.map(m => m.chunk.text).join('\n\n---\n\n') 
-                : state.chunks[0].text;
-                
-            const chunk = { text: combinedText };
-            const leaderExaminer = { id: 'leader', name: 'Group Leader', role: 'Surprise Question', avatar: '👑' };
-            state.session.questions.push({ examiner: leaderExaminer, question: customQ, chunk, keyword: 'custom' });
-        }
-
-        const remainingQuestions = customQ ? numQuestions - 1 : numQuestions;
+        const remainingQuestions = numQuestions;
         for (let i = 0; i < remainingQuestions; i++) {
             const ex = plan[i];
             const { question, chunk, keyword } = generateQuestion(ex, state.session.usedChunkIds, i);
