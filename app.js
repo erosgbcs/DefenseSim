@@ -45,8 +45,10 @@
         const EXAMINERS = [
         {
             id: 'methodology', name: 'Dr. Reyes', role: 'Methodology', avatar: '🔬',
-            focus: ['method', 'procedure', 'instrument', 'sampling', 'validation', 'participant'],
+            focus: ['method', 'procedure', 'instrument', 'sampling', 'validation', 'participant', 'scope', 'limitation', 'delimitation'],
             questionTemplates: [
+            'What are the specific scope and limitations of your study? What did you intentionally exclude and why?',
+            'How do the limitations of your methodology affect the generalizability of your findings?',
             'Walk me through the exact {keyword} you used in your study. Why did you choose it over alternatives?',
             'You mention "{keyword}" — what is your justification for this design decision?',
             'How did you establish the reliability and validity of your {keyword}?',
@@ -56,8 +58,10 @@
         },
         {
             id: 'literature', name: 'Dr. Villanueva', role: 'Literature & Frameworks', avatar: '📚',
-            focus: ['theory', 'framework', 'literature', 'study', 'author', 'model', 'conceptual'],
+            focus: ['theory', 'framework', 'literature', 'study', 'author', 'model', 'conceptual', 'background', 'context', 'problem'],
             questionTemplates: [
+            'Can you explain the background of your study and what led you to this specific research problem?',
+            'What gap in the literature or context justifies the background of your study?',
             'You reference "{keyword}" — can you explain how this directly anchors your study?',
             'Which theoretical framework did you adopt for {keyword}, and why not another?',
             'What gap in the literature justifies your {keyword}?',
@@ -100,12 +104,15 @@
         },
         {
             id: 'technical', name: 'Dr. Cruz', role: 'Technical Implementation', avatar: '💻',
-            focus: ['system', 'development', 'framework', 'database', 'deployment', 'language', 'frontend', 'backend', 'technology', 'stack'],
+            focus: ['system', 'development', 'framework', 'database', 'deployment', 'language', 'frontend', 'backend', 'technology', 'stack', 'javascript', 'python', 'firebase', 'firestore'],
             questionTemplates: [
-            'What programming languages and frameworks did you use to develop your system?',
-            'What deployment platform did you choose for your project (e.g., Vercel, Heroku, AWS) and why?',
+            'Why did you build your application in vanilla JavaScript (ES2022) without a front-end framework like React, Vue, or Angular?',
+            'What specific data-science libraries in Python 3.11 did you use for your forecasting module?',
+            'Why did you choose Cloud Firestore over a relational database for your persistent application data?',
+            'Can you explain how you implemented real-time synchronization and offline persistence using the Firestore client SDK?',
+            'Can you walk me through the purpose of the five primary collections in your Firestore database?',
+            'What deployment platform did you choose for your Python serverless functions, and why?',
             'Why did you choose {keyword} for your system architecture?',
-            'Can you walk me through the database schema or data structure of your {keyword}?',
             'How did you handle security and data privacy in your {keyword}?'
             ],
             followUpTemplates: [],
@@ -1050,7 +1057,8 @@
             `If the student invents facts or contradicts the excerpts, penalize the score heavily. ` +
             `The student may answer in English, Tagalog, or Taglish. Understand the answer regardless of language. ` +
             `Provide your feedback (strengths, improvements, verdict) in the SAME language the student used. ` +
-            `Return STRICT JSON only, no markdown: {"score": <0-100>, "strengths": [..], "improvements": [..], "verdict": "<one sentence>"}`;
+            `If the score is below 70, you MUST provide the correct, complete answer based strictly on the excerpts in the "correctAnswer" field. ` +
+            `Return STRICT JSON only, no markdown: {"score": <0-100>, "strengths": [..], "improvements": [..], "verdict": "<one sentence>", "correctAnswer": "<string>"}`;
         const user = `QUESTION: ${question}\n\nTHESIS EXCERPTS:\n"""${chunkText.slice(0, 3500)}"""\n\n` +
             `STUDENT ANSWER:\n"""${answer.slice(0, 2000)}"""\n\n` +
             `Score the answer from 0 to 100 based on: relevance to the question, accuracy compared to the excerpts, completeness, and defense quality.`;
@@ -1064,6 +1072,7 @@
             strengths: Array.isArray(json.strengths) ? json.strengths.slice(0, 4) : [],
             improvements: Array.isArray(json.improvements) ? json.improvements.slice(0, 4) : [],
             verdict: json.verdict || '',
+            correctAnswer: json.correctAnswer || '',
             source: 'llm',
             };
         } catch { return null; }
@@ -1143,7 +1152,16 @@
             score >= 40 ? 'Needs more substance and specificity.' :
             'Answer does not yet meet defense standards.';
 
-        return { score, strengths: strengths.slice(0, 4), improvements: improvements.slice(0, 4), verdict, source: 'local' };
+        // Fallback: Extract a relevant sentence from the PDF chunk if the answer is weak
+        let correctAnswer = '';
+        if (score < 70) {
+            const sentences = chunkText.split(/(?<=[.!?])\s+/);
+            const qWords = question.toLowerCase().match(/\b\w{4,}\b/g) || [];
+            const bestSentence = sentences.find(s => qWords.some(w => s.toLowerCase().includes(w))) || sentences[0];
+            if (bestSentence) correctAnswer = bestSentence.trim();
+        }
+
+        return { score, strengths: strengths.slice(0, 4), improvements: improvements.slice(0, 4), verdict, correctAnswer, source: 'local' };
         }
 
         /* ============================================================
@@ -1215,11 +1233,8 @@
         const numQuestions = 6;
         const timePerQ = 180;
 
-        const chapters = [];
-        if ($('#chapter1').checked) chapters.push('Chapter 1');
-        if ($('#chapter2').checked) chapters.push('Chapter 2');
-        if ($('#chapter3').checked) chapters.push('Chapter 3');
-        if ($('#chapter4').checked) chapters.push('Chapter 4');
+        // Hardcoded to cover all chapters since the configuration panel is removed
+        const chapters = ['Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4'];
 
         const selected = EXAMINERS;
         const plan = [];
@@ -1386,6 +1401,13 @@
                 </div>
                 ${strengths ? `<div class="fb-section"><div class="fb-title">Strengths</div><ul>${strengths}</ul></div>` : ''}
                 ${improvements ? `<div class="fb-section"><div class="fb-title">Improve</div><ul>${improvements}</ul></div>` : ''}
+                ${(result.score < 70 && result.correctAnswer) ? `
+                <div class="fb-section">
+                    <div class="fb-title" style="color: var(--accent);">True Answer (From PDF)</div>
+                    <div style="font-size:0.88rem; color:var(--text); background:var(--bg-soft); padding:12px; border-radius:8px; border-left:3px solid var(--accent); line-height: 1.5; margin-top: 4px;">
+                        ${escapeHtml(result.correctAnswer)}
+                    </div>
+                </div>` : ''}
                 <div class="session-actions" style="margin-top: 16px; padding-top: 16px;">
                     <button class="btn primary" id="nextBtn">Next Question →</button>
                     <button class="btn danger" id="endBtn2">End Defense</button>
@@ -1571,7 +1593,12 @@
                 <span class="chunk-score">${r.result.score}/100</span>
             </div>
             <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(r.question)}</div>
-            <div class="chunk-text">${escapeHtml(truncate(r.answer || '(skipped)', 240))}</div>
+            <div class="chunk-text" style="margin-bottom: 8px;">Your Answer: ${escapeHtml(truncate(r.answer || '(skipped)', 240))}</div>
+            ${(r.result.score < 70 && r.result.correctAnswer) ? `
+                <div style="font-size:0.82rem; color:var(--text); background:var(--panel-2); padding:10px; border-radius:6px; border-left:2px solid var(--accent);">
+                    <strong style="color:var(--accent);">True Answer:</strong> ${escapeHtml(r.result.correctAnswer)}
+                </div>
+            ` : ''}
             </div>
         `).join('');
 
