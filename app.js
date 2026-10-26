@@ -529,8 +529,39 @@
             const viewId = 'view-' + btn.dataset.view;
             $$('.view').forEach((v) => v.classList.toggle('active', v.id === viewId));
             if (btn.dataset.view === 'kb') renderKB();
+            if (btn.dataset.view === 'admin') renderLiveMonitor();
             });
         });
+        }
+
+        async function renderLiveMonitor() {
+            const list = $('#liveMonitorList');
+            if (!list) return;
+            list.innerHTML = '<div class="muted small">Searching for active sessions…</div>';
+            try {
+                const snap = await db.collection(STORE_LIVE).where('active', '==', true).get();
+                if (snap.empty) {
+                    list.innerHTML = '<div class="empty-state">No active defenses right now.</div>';
+                    return;
+                }
+                list.innerHTML = snap.docs.map(d => {
+                    const data = d.data();
+                    return `
+                    <div class="doc-item">
+                        <div class="file-icon txt">LIVE</div>
+                        <div class="file-meta">
+                            <div class="file-name">${escapeHtml(data.email)}</div>
+                            <div class="file-sub">Defense in progress</div>
+                        </div>
+                        <div class="file-actions">
+                            <input type="text" id="injectQ-${d.id}" placeholder="Type surprise question..." style="width: 200px; padding: 6px; font-size: 0.8rem; margin-right: 8px;" />
+                            <button class="btn primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="injectLiveQuestion('${d.id}')">Send</button>
+                        </div>
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                list.innerHTML = `<div class="muted small">Error: ${e.message}</div>`;
+            }
         }
 
         /* ============================================================
@@ -1090,6 +1121,37 @@
         $('#startBtn').addEventListener('click', startSession);
         }
 
+        function listenForLeaderLive(liveId) {
+            if (state.session.unsubscribeLive) state.session.unsubscribeLive();
+            state.session.unsubscribeLive = db.collection(STORE_LIVE).doc(liveId).onSnapshot(doc => {
+                if (!doc.exists) return;
+                const data = doc.data();
+                // If a new question is injected
+                if (data.injectedQuestion && data.injectedAt !== state.session.lastInjectedAt) {
+                    state.session.lastInjectedAt = data.injectedAt;
+                    state.session.questions.push({
+                        examiner: { id: 'leader', name: 'Group Leader', role: 'Live Interruption', avatar: '👑' },
+                        question: data.injectedQuestion,
+                        chunk: state.chunks[0] || { text: 'Live question' },
+                        keyword: 'custom'
+                    });
+                    toast('👑 The Group Leader has asked a new question!', 'warn');
+                    renderSession();
+                }
+            });
+        }
+
+        window.injectLiveQuestion = async (docId) => {
+            const input = document.getElementById('injectQ-' + docId);
+            if (!input || !input.value.trim()) return;
+            await db.collection(STORE_LIVE).doc(docId).update({
+                injectedQuestion: input.value.trim(),
+                injectedAt: Date.now()
+            });
+            input.value = '';
+            toast('Question sent to member!', 'ok');
+        };
+
         async function startSession() {
         if (!state.chunks.length) { toast('Upload a document first.', 'warn'); return; }
         const numQuestions = Math.max(3, Math.min(20, Number($('#numQuestions').value) || 6));
@@ -1112,7 +1174,19 @@
             startTime: Date.now(),
             timerHandle: null, timerRemaining: 0,
             phase: 'question', current: null,
+            liveId: null, unsubscribeLive: null, lastInjectedAt: 0
         };
+
+        // Create a live session for the leader to monitor
+        try {
+            state.session.liveId = await dbAdd(STORE_LIVE, {
+                uid: state.auth.currentUser.uid,
+                email: state.auth.currentUser.username,
+                active: true,
+                createdAt: Date.now()
+            });
+            listenForLeaderLive(state.session.liveId);
+        } catch (e) { console.warn('Live sync failed', e); }
 
         const customQ = $('#customQuestion').value.trim();
         if (customQ) {
@@ -1451,6 +1525,10 @@
 
         function restartSession() {
         endSessionTimer();
+        if (state.session?.unsubscribeLive) state.session.unsubscribeLive();
+        if (state.session?.liveId) {
+            dbDelete(STORE_LIVE, state.session.liveId).catch(() => {});
+        }
         state.session = null;
         $('#setupPanel').classList.remove('hidden');
         $('#sessionPanel').classList.add('hidden');
