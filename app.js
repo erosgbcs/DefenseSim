@@ -61,6 +61,7 @@
                     id: 'literature', name: 'Dr. Villanueva', role: 'Literature & Frameworks', avatar: '📚',
                     focus: ['theory', 'framework', 'literature', 'background', 'context', 'problem', 'P1', 'P15', 'manual'],
                     questionTemplates: [
+                    'What is the main current problem you aimed to solve with this system, and how do you know it was a real issue for the target users?',
                     'Can you explain the background of your study and the specific operational pains of Kirby\'s Hardware that led to this research?',
                     'How does your system address the 15 specific problems (P1-P15) identified in your problem statement?',
                     'You referenced the capital cost barrier of commercial POS systems. How does your serverless architecture solve this?',
@@ -1130,44 +1131,66 @@
                 OPTIONAL LLM
                 ============================================================ */
                 async function llmGenerateQuestion(examiner, chunkText, chapters = []) {
-                if (!state.settings.useLLM || !state.settings.apiKey) return null;
+                if (!state.settings.useLLM || !state.settings.apiKey) {
+                    throw new Error('LLM is not configured. Ask the Admin to save the API key.');
+                }
                 const chapterCtx = chapters.length ? `Focus the question on content relevant to: ${chapters.join(', ')}. ` : '';
                 const system = `You are an academic thesis panelist specializing in ${examiner.role}. ` +
                     `${chapterCtx}` +
-                    `Based on the provided text, ask ONE helpful but specific question to check the student's understanding. ` +
-                    `The project is "Kirby's Hardware POS" (Vanilla JS/Python, Firestore, Vercel, AI APIs). ` +
+                    `Based on the provided text, ask ONE helpful but specific question. ` +
+                    `The project uses Vanilla JS, Python, Firestore, Vercel, and AI APIs (Gemini/Groq). ` +
                     `Rules for your question:\n` +
                     `1. Be conversational and easy to understand.\n` +
-                    `2. Base it STRICTLY on a specific detail from the text.\n` +
-                    `3. Ask only ONE thing at a time.\n` +
-                    `4. Keep it under 35 words.\n` +
-                    `5. You may ask in English or Tagalog.\n` +
+                    `2. Focus on the ARCHITECTURE and TECH STACK choices (e.g., why they chose Vercel, how Firestore handles offline syncing, why Vanilla JS instead of React, how the AI fallback works).\n` +
+                    `3. You may ask about the CURRENT PROBLEM or problem statement the study addresses (e.g., "What specific operational pain led to this system?").\n` +
+                    `4. Do NOT ask them to write code, explain syntax, or explain specific lines of programming logic.\n` +
+                    `5. Base it STRICTLY on a specific detail from the text.\n` +
+                    `6. Ask only ONE thing at a time.\n` +
+                    `7. Keep it under 35 words.\n` +
+                    `8. You may ask in English or Tagalog.\n` +
                     `Return ONLY the question text.`;
                 const user = `THESIS EXCERPT:\n"""${chunkText.slice(0, 3000)}"""\n\n` +
                     `Based on this excerpt, write a specific defense question related to ${examiner.role}.`;
-                const reply = await callLLM(system, user, 300); // Increased from 180 to 300
+                const reply = await callLLM(system, user, 400); // Increased tokens
                 if (!reply) throw new Error('The AI returned an empty response.');
-                return reply.trim().replace(/^["']|["']$/g, '');
+                
+                const cleanQuestion = reply.trim().replace(/^["']|["']$/g, '');
+                if (cleanQuestion.length < 15) {
+                    throw new Error('AI returned an invalid or too-short question: "' + cleanQuestion + '"');
+                }
+                return cleanQuestion;
                 }
 
                 async function llmEvaluateAnswer(question, answer, chunkText) {
-                if (!state.settings.useLLM || !state.settings.apiKey) return null;
+                if (!state.settings.useLLM || !state.settings.apiKey) {
+                    throw new Error('LLM is not configured. Ask the Admin to save the API key.');
+                }
                 const system = `You are a strict but fair thesis defense panelist. ` +
                     `You must evaluate the student's answer STRICTLY based on the provided thesis excerpts. ` +
                     `The thesis is about a POS system using Vanilla JS, Python, Firestore, and Gemini/Groq. ` +
-                    `If the student invents facts, contradicts the excerpts, or gives vague generic answers instead of technical specifics from their own document, penalize the score heavily. ` +
+                    `Focus on evaluating their conceptual understanding of the tech stack and architecture, NOT code syntax. ` +
+                    `If the student invents facts, contradicts the excerpts, or gives vague generic answers instead of specific architectural justifications from their own document, penalize the score heavily. ` +
                     `The student may answer in English, Tagalog, or Taglish. Understand the answer regardless of language. ` +
                     `Provide your feedback (strengths, improvements, verdict) in the SAME language the student used. ` +
                     `If the score is below 70, you MUST provide the correct, complete answer based strictly on the excerpts in the "correctAnswer" field. ` +
                     `Return STRICT JSON only, no markdown: {"score": <0-100>, "strengths": [..], "improvements": [..], "verdict": "<one sentence>", "correctAnswer": "<string>"}`;
-                const user = `QUESTION: ${question}\n\nTHESIS EXCERPTS:\n"""${chunkText.slice(0, 3500)}"""\n\n` +
-                    `STUDENT ANSWER:\n"""${answer.slice(0, 2000)}"""\n\n` +
+                const user = `QUESTION: ${question}\n\nTHESIS EXCERPTS:\n"""${chunkText.slice(0, 3000)}"""\n\n` +
+                    `STUDENT ANSWER:\n"""${answer.slice(0, 1000)}"""\n\n` +
                     `Score the answer from 0 to 100 based on: relevance to the question, accuracy compared to the excerpts, completeness, and defense quality.`;
-                const reply = await callLLM(system, user, 400);
-                if (!reply) return null;
+                const reply = await callLLM(system, user, 1500); // Increased to 1500 to prevent truncated JSON
+                if (!reply) throw new Error('AI returned an empty evaluation response.');
+                
                 try {
-                    const json = JSON.parse(reply.replace(/```json|```/g, '').trim());
-                    if (typeof json.score !== 'number') return null;
+                    // Extract JSON robustly in case the AI wraps it in markdown or adds text
+                    const rawJson = reply.replace(/```json/gi, '').replace(/```/g, '').trim();
+                    const start = rawJson.indexOf('{');
+                    const end = rawJson.lastIndexOf('}');
+                    if (start === -1 || end === -1) throw new Error('No JSON object found in AI response.');
+                    
+                    const jsonStr = rawJson.substring(start, end + 1);
+                    const json = JSON.parse(jsonStr);
+                    
+                    if (typeof json.score !== 'number') throw new Error('AI returned JSON without a numeric score.');
                     return {
                     score: Math.max(0, Math.min(100, json.score)),
                     strengths: Array.isArray(json.strengths) ? json.strengths.slice(0, 4) : [],
@@ -1176,7 +1199,18 @@
                     correctAnswer: json.correctAnswer || '',
                     source: 'llm',
                     };
-                } catch { return null; }
+                } catch (err) { 
+                    console.error('JSON Parse Error:', err, 'Raw reply:', reply);
+                    // Fallback instead of crashing if the AI still manages to send bad JSON
+                    return {
+                        score: 0,
+                        strengths: [],
+                        improvements: ['The AI evaluation response was malformed. Please try again.'],
+                        verdict: 'Evaluation parsing failed.',
+                        correctAnswer: '',
+                        source: 'parse_error'
+                    };
+                }
                 }
 
                 async function callLLM(system, user, maxTokens = 300) {
