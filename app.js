@@ -538,30 +538,60 @@
             const list = $('#liveMonitorList');
             if (!list) return;
             list.innerHTML = '<div class="muted small">Searching for active sessions…</div>';
+            
             try {
                 const snap = await db.collection(STORE_LIVE).where('active', '==', true).get();
                 if (snap.empty) {
                     list.innerHTML = '<div class="empty-state">No active defenses right now.</div>';
-                    return;
+                } else {
+                    list.innerHTML = snap.docs.map(d => {
+                        const data = d.data();
+                        const chat = data.chat || [];
+                        const chatHTML = chat.map(m => `
+                            <div style="margin-bottom: 4px; font-size: 0.8rem;">
+                                <strong>${m.sender === 'member' ? 'Student' : 'You'}:</strong> ${escapeHtml(m.text)}
+                            </div>
+                        `).join('');
+                        
+                        return `
+                        <div class="doc-item" style="flex-direction: column; align-items: stretch; margin-bottom: 10px;">
+                            <div style="display:flex; justify-content:space-between; margin-bottom: 8px;">
+                                <div class="file-name">${escapeHtml(data.email)}</div>
+                            </div>
+                            <div id="liveChat-${d.id}" style="max-height: 150px; overflow-y: auto; background: var(--bg-soft); padding: 8px; border-radius: 8px; margin-bottom: 8px;">
+                                ${chatHTML || '<div class="muted small">No messages yet.</div>'}
+                            </div>
+                            <div class="file-actions" style="width: 100%;">
+                                <input type="text" id="injectQ-${d.id}" placeholder="Type hidden prompt or reply..." style="flex: 1; padding: 8px; font-size: 0.8rem; margin-right: 8px;" />
+                                <button class="btn primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="injectLiveQuestion('${d.id}')">Send</button>
+                            </div>
+                        </div>`;
+                    }).join('');
                 }
-                list.innerHTML = snap.docs.map(d => {
-                    const data = d.data();
-                    return `
-                    <div class="doc-item">
-                        <div class="file-icon txt">LIVE</div>
-                        <div class="file-meta">
-                            <div class="file-name">${escapeHtml(data.email)}</div>
-                            <div class="file-sub">Defense in progress</div>
-                        </div>
-                        <div class="file-actions">
-                            <input type="text" id="injectQ-${d.id}" placeholder="Type surprise question..." style="width: 200px; padding: 6px; font-size: 0.8rem; margin-right: 8px;" />
-                            <button class="btn primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="injectLiveQuestion('${d.id}')">Send</button>
-                        </div>
-                    </div>`;
-                }).join('');
             } catch (e) {
                 list.innerHTML = `<div class="muted small">Error: ${e.message}</div>`;
             }
+
+            // Listen for changes to update the chat automatically
+            if (window.liveMonitorUnsubscribe) window.liveMonitorUnsubscribe();
+            window.liveMonitorUnsubscribe = db.collection(STORE_LIVE).where('active', '==', true).onSnapshot(snap => {
+                snap.docChanges().forEach(change => {
+                    if (change.type === 'modified') {
+                        const d = change.doc;
+                        const data = d.data();
+                        const chatContainer = document.getElementById(`liveChat-${d.id}`);
+                        if (chatContainer) {
+                            const chat = data.chat || [];
+                            chatContainer.innerHTML = chat.map(m => `
+                                <div style="margin-bottom: 4px; font-size: 0.8rem;">
+                                    <strong>${m.sender === 'member' ? 'Student' : 'You'}:</strong> ${escapeHtml(m.text)}
+                                </div>
+                            `).join('');
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
+                        }
+                    }
+                });
+            });
         }
 
         /* ============================================================
@@ -1123,19 +1153,34 @@
 
         function listenForLeaderLive(liveId) {
             if (state.session.unsubscribeLive) state.session.unsubscribeLive();
-            state.session.unsubscribeLive = db.collection(STORE_LIVE).doc(liveId).onSnapshot(doc => {
+            if (!state.session.seenLiveMsgs) state.session.seenLiveMsgs = new Set();
+            
+            state.session.unsubscribeLive = db.collection(STORE_LIVE).doc(liveId).onSnapshot(async doc => {
                 if (!doc.exists) return;
                 const data = doc.data();
-                // If a new question is injected
-                if (data.injectedQuestion && data.injectedAt !== state.session.lastInjectedAt) {
-                    state.session.lastInjectedAt = data.injectedAt;
-                    state.session.questions.push({
-                        examiner: { id: 'leader', name: 'Group Leader', role: 'Live Interruption', avatar: '👑' },
-                        question: data.injectedQuestion,
-                        chunk: state.chunks[0] || { text: 'Live question' },
-                        keyword: 'custom'
-                    });
-                    toast('👑 The Group Leader has asked a new question!', 'warn');
+                const chat = data.chat || [];
+                
+                const newMsgs = chat.filter(m => m.sender === 'leader' && !state.session.seenLiveMsgs.has(m.id));
+                if (newMsgs.length > 0) {
+                    for (const msg of newMsgs) {
+                        state.session.seenLiveMsgs.add(msg.id);
+                        
+                        let finalQuestion = msg.text;
+                        // Hide the leader's raw prompt by refining it with AI if available
+                        if (state.settings.useLLM && state.settings.apiKey) {
+                            const ex = { name: 'Dr. Cruz', role: 'Technical', avatar: '💻' };
+                            const refined = await llmGenerateQuestion(ex, state.chunks[0]?.text || '', msg.text);
+                            if (refined) finalQuestion = refined;
+                        }
+                        
+                        state.session.questions.push({
+                            examiner: { id: 'hidden', name: 'Panelist', role: 'Follow-up', avatar: '🧑‍🏫' },
+                            question: finalQuestion,
+                            chunk: state.chunks[0] || { text: 'Live question' },
+                            keyword: 'custom'
+                        });
+                    }
+                    toast('A panelist has asked a new question.', 'info');
                     renderSession();
                 }
             });
@@ -1145,11 +1190,15 @@
             const input = document.getElementById('injectQ-' + docId);
             if (!input || !input.value.trim()) return;
             await db.collection(STORE_LIVE).doc(docId).update({
-                injectedQuestion: input.value.trim(),
-                injectedAt: Date.now()
+                chat: firebase.firestore.FieldValue.arrayUnion({
+                    id: Date.now().toString() + Math.random().toString(),
+                    sender: 'leader',
+                    text: input.value.trim(),
+                    timestamp: Date.now()
+                })
             });
             input.value = '';
-            toast('Question sent to member!', 'ok');
+            toast('Reply sent!', 'ok');
         };
 
         async function startSession() {
@@ -1183,7 +1232,8 @@
                 uid: state.auth.currentUser.uid,
                 email: state.auth.currentUser.username,
                 active: true,
-                createdAt: Date.now()
+                createdAt: Date.now(),
+                chat: [] // Initialize chat array
             });
             listenForLeaderLive(state.session.liveId);
         } catch (e) { console.warn('Live sync failed', e); }
@@ -1415,6 +1465,19 @@
 
         s.lastResult = result;
         s.results.push({ examiner: item.examiner, question: item.question, answer, result, chunk: item.chunk });
+        
+        // Send to Leader
+        if (s.liveId) {
+            db.collection(STORE_LIVE).doc(s.liveId).update({
+                chat: firebase.firestore.FieldValue.arrayUnion({
+                    id: Date.now().toString() + Math.random().toString(),
+                    sender: 'member',
+                    text: answer,
+                    timestamp: Date.now()
+                })
+            }).catch(e => console.warn(e));
+        }
+        
         s.phase = 'feedback';
         renderSession();
         }
@@ -1529,6 +1592,7 @@
         if (state.session?.liveId) {
             dbDelete(STORE_LIVE, state.session.liveId).catch(() => {});
         }
+        if (window.liveMonitorUnsubscribe) { window.liveMonitorUnsubscribe(); window.liveMonitorUnsubscribe = null; }
         state.session = null;
         $('#setupPanel').classList.remove('hidden');
         $('#sessionPanel').classList.add('hidden');
