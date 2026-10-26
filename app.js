@@ -505,7 +505,7 @@
                     toast(`Signed in as ${user.email}.`, 'ok');
                     
                     await reloadKB();
-                    await loadSettingsFromDB();
+                    loadSettingsFromDB(); // Starts real-time listener
                     updateStartHint();
                 } catch (err) {
                     console.error('Failed to fetch user role:', err);
@@ -518,6 +518,12 @@
                 applyRolePermissions();
                 $('#userChip').hidden = true;
                 
+                // Stop listening to settings when logged out
+                if (window.unsubscribeSettings) { 
+                    window.unsubscribeSettings(); 
+                    window.unsubscribeSettings = null; 
+                }
+
                 const hasAdmin = await adminExists();
                 if (!hasAdmin) showAuthSetup();
                 else showAuthLogin();
@@ -986,26 +992,30 @@
             $('#apiKey').value   = state.settings.apiKey || '';
             }
 
-            /* Load AI settings from Firestore (source of truth). Falls back to cached values. */
-            async function loadSettingsFromDB() {
+            /* Load AI settings from Firestore in real-time so members instantly get the Admin's key. */
+            function loadSettingsFromDB() {
             if (!firebaseReady) return;
-            try {
-                const snap = await db.collection(STORE_SETTINGS).doc('global').get();
+            
+            // Unsubscribe from any previous listener to prevent duplicates
+            if (window.unsubscribeSettings) window.unsubscribeSettings();
+
+            window.unsubscribeSettings = db.collection(STORE_SETTINGS).doc('global').onSnapshot(snap => {
                 if (snap.exists) {
                     Object.assign(state.settings, snap.data());
                     // Refresh the localStorage cache so the next boot is instant
                     localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
                 }
-                // Sync the UI to whatever we now have in state
-                $('#useLLM').checked = !!state.settings.useLLM;
-                $('#llmProvider').value = state.settings.provider || 'openai';
-                $('#endpoint').value = state.settings.endpoint || '';
-                $('#model').value    = state.settings.model || '';
-                $('#apiKey').value   = state.settings.apiKey || '';
+                // Sync the UI (safe to run even for members who don't see the Admin tab)
+                if ($('#useLLM')) $('#useLLM').checked = !!state.settings.useLLM;
+                if ($('#llmProvider')) $('#llmProvider').value = state.settings.provider || 'openai';
+                if ($('#endpoint')) $('#endpoint').value = state.settings.endpoint || '';
+                if ($('#model')) $('#model').value    = state.settings.model || '';
+                if ($('#apiKey')) $('#apiKey').value   = state.settings.apiKey || '';
+                
                 updateStartHint();
-            } catch (err) {
+            }, err => {
                 console.error('Failed to load settings from DB:', err);
-            }
+            });
             }
             function initSettings() {
             const PROVIDER_DEFAULTS = {
