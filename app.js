@@ -29,6 +29,7 @@
         const STORE_DOCS   = 'defensesim_documents';
         const STORE_CHUNKS = 'defensesim_chunks';
         const STORE_USERS  = 'defensesim_users';
+        const STORE_LIVE   = 'defensesim_live';
         const LEADER_EMAIL = 'gabrielagsamosam@gmail.com';
 
         const CHUNK_SIZE     = 900;
@@ -1093,7 +1094,6 @@
         if (!state.chunks.length) { toast('Upload a document first.', 'warn'); return; }
         const numQuestions = Math.max(3, Math.min(20, Number($('#numQuestions').value) || 6));
         const timePerQ    = Math.max(0, Math.min(900, Number($('#timePerQ').value) || 0));
-        const difficulty  = $('#difficulty').value;
 
         const chapters = [];
         if ($('#chapter1').checked) chapters.push('Chapter 1');
@@ -1106,7 +1106,7 @@
         for (let i = 0; i < numQuestions; i++) plan.push(selected[i % selected.length]);
 
         state.session = {
-            numQuestions, timePerQ, difficulty, chapters, plan,
+            numQuestions, timePerQ, chapters, plan,
             index: 0, questions: [], results: [],
             usedChunkIds: new Set(),
             startTime: Date.now(),
@@ -1337,7 +1337,7 @@
         if (state.settings.useLLM && state.settings.apiKey) {
             result = await llmEvaluateAnswer(item.question, answer, item.chunk.text);
         }
-        if (!result) result = evaluateAnswerLocal(item.question, answer, item.chunk.text, s.difficulty);
+        if (!result) result = evaluateAnswerLocal(item.question, answer, item.chunk.text);
 
         s.lastResult = result;
         s.results.push({ examiner: item.examiner, question: item.question, answer, result, chunk: item.chunk });
@@ -1425,7 +1425,7 @@
             <div class="big-score">${avg}</div>
             <div class="verdict-line">${verdict}</div>
             <p class="muted small" style="margin-top:8px;">
-                ${results.length} question${results.length === 1 ? '' : 's'} · difficulty: ${s.difficulty}
+                ${results.length} question${results.length === 1 ? '' : 's'}
             </p>
             </div>
             <div class="summary-grid">
