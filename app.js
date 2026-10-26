@@ -59,8 +59,13 @@
                 },
                 {
                     id: 'literature', name: 'Dr. Villanueva', role: 'Literature & Frameworks', avatar: '📚',
-                    focus: ['theory', 'framework', 'literature', 'background', 'context', 'problem', 'P1', 'P15', 'manual'],
+                    focus: ['theory', 'framework', 'literature', 'background', 'context', 'problem', 'P1', 'P15', 'manual', 'drift', 'variant', 'blind spots', 'barriers'],
                     questionTemplates: [
+                    'What are the current challenges Kirby\'s Hardware faces, and what specific solutions does your system propose?',
+                    'How does your system address the "Manual Processes" challenge, specifically the handwritten ledgers and mental arithmetic?',
+                    'Can you explain how your system solves "Inventory Drift" and the lack of real-time low-stock alerts?',
+                    'How does your system handle the "Variant Complexity" of multiple sizes, weights, and brands compared to the manual method?',
+                    'You mentioned "Business Blind Spots." How does your system provide forecasting and sales trends where there were none before?',
                     'What is the main current problem you aimed to solve with this system, and how do you know it was a real issue for the target users?',
                     'Can you explain the background of your study and the specific operational pains of Kirby\'s Hardware that led to this research?',
                     'How does your system address the 15 specific problems (P1-P15) identified in your problem statement?',
@@ -74,6 +79,10 @@
                     id: 'application', name: 'Dr. Santos', role: 'Practical Application', avatar: '🛠',
                     focus: ['implication', 'recommendation', 'contribution', 'practical', 'beneficiary', 'cashier', 'owner', 'hardware'],
                     questionTemplates: [
+                    'How does the system reduce the human error caused by manual handwritten ledgers and mental arithmetic?',
+                    'Can you explain how the Point of Sale handles both cash and GCash payments, and how the receipt generation works?',
+                    'How do the live KPI dashboards and revenue trends help the store owner make better business decisions?',
+                    'How does the activity trail and user management feature ensure staff accountability in the store?',
                     'What is the concrete real-world implication of your 7-day revenue forecast for a small hardware store owner?',
                     'How does the system reduce checkout time and errors for cashiers compared to the carbon-copy method?',
                     'Who specifically benefits from the AI Assistant "Kirby", and how does it practically help with restocking?',
@@ -108,13 +117,14 @@
                     focus: ['system', 'javascript', 'python', 'firebase', 'firestore', 'gemini', 'groq', 'variant', 'matrix', 'api', 'vercel', 'libraries', 'stack', 'database'],
                     questionTemplates: [
                     'What specific programming languages and frameworks did you use to build this system, and why did you choose them?',
+                    'Walk me through your Product CRUD implementation and how you generate the CSV exports for the inventory management.',
+                    'Explain how your application-level localStorage.pos_order_queue syncs with Firestore when connectivity returns.',
+                    'Walk me through how you modeled the 0/1/2 option group variant matrix in Firestore. How do you prevent overselling on variants?',
                     'What API did you integrate for your AI assistant, and how did you handle the API keys securely on the backend?',
                     'What is Vercel, and why did you choose it as your deployment platform for both the frontend and Python backend?',
                     'Can you explain the difference between your Vanilla JS frontend and Python backend, and how they communicate via APIs?',
                     'What database did you use, and why is it better for your POS system than a traditional SQL database?',
                     'Why did you build your application in vanilla JavaScript (ES2022) without React, Vue, or Angular?',
-                    'Explain how your application-level localStorage.pos_order_queue syncs with Firestore when connectivity returns.',
-                    'Walk me through how you modeled the 0/1/2 option group variant matrix in Firestore. How do you prevent overselling on variants?',
                     'What specific data-science libraries in Python 3.11 did you use for your forecasting module?',
                     'Why did you choose Gemini as primary and Groq as fallback for your AI assistant, and how did you isolate provider errors?',
                     ],
@@ -1139,10 +1149,21 @@
                     `${chapterCtx}` +
                     `Based on the provided text, ask ONE helpful but specific question. ` +
                     `The project uses Vanilla JS, Python, Firestore, Vercel, and AI APIs (Gemini/Groq). ` +
+                    `The specific challenges the system solves for Kirby's Hardware are:\n` +
+                    `- Manual Processes (handwritten ledgers, mental arithmetic)\n` +
+                    `- Inventory Drift (no real-time tracking, no low-stock alerts)\n` +
+                    `- Variant Complexity (multiple sizes, weights, brands)\n` +
+                    `- Business Blind Spots (no customer tracking, sales trends, or forecasting)\n` +
+                    `- Technology Barriers (expensive commercial POS, unstable internet)\n` +
+                    `The core system functionalities are:\n` +
+                    `- Point of Sale (POS): Interactive cart, cash & GCash, receipts, variant selection.\n` +
+                    `- Inventory Management: Product CRUD, matrix variants, low-stock alerts, CSV exports.\n` +
+                    `- Reports & Analytics: Live KPI dashboards, revenue trends, top-selling products.\n` +
+                    `- Audit & User Management: Activity trails, secure password resets, strict admin controls.\n` +
                     `Rules for your question:\n` +
                     `1. Be conversational and easy to understand.\n` +
-                    `2. Focus on the ARCHITECTURE and TECH STACK choices (e.g., why they chose Vercel, how Firestore handles offline syncing, why Vanilla JS instead of React, how the AI fallback works).\n` +
-                    `3. You may ask about the CURRENT PROBLEM or problem statement the study addresses (e.g., "What specific operational pain led to this system?").\n` +
+                    `2. Focus on the ARCHITECTURE and TECH STACK choices.\n` +
+                    `3. You MUST occasionally ask about the CHALLENGES, the SYSTEM FUNCTIONALITIES, or the PROPOSED SOLUTIONS.\n` +
                     `4. Do NOT ask them to write code, explain syntax, or explain specific lines of programming logic.\n` +
                     `5. Base it STRICTLY on a specific detail from the text.\n` +
                     `6. Ask only ONE thing at a time.\n` +
@@ -1169,14 +1190,16 @@
                     `You must evaluate the student's answer STRICTLY based on the provided thesis excerpts. ` +
                     `The thesis is about a POS system using Vanilla JS, Python, Firestore, and Gemini/Groq. ` +
                     `Focus on evaluating their conceptual understanding of the tech stack and architecture, NOT code syntax. ` +
+                    `The student's answer can be just 1 or 2 sentences long, and it can be written in Tagalog or English. ` +
+                    `Short, direct answers are completely acceptable and should not be penalized for brevity if they correctly answer the question. ` +
                     `If the student invents facts, contradicts the excerpts, or gives vague generic answers instead of specific architectural justifications from their own document, penalize the score heavily. ` +
-                    `The student may answer in English, Tagalog, or Taglish. Understand the answer regardless of language. ` +
+                    `Understand the answer regardless of language (English, Tagalog, or Taglish). ` +
                     `Provide your feedback (strengths, improvements, verdict) in the SAME language the student used. ` +
                     `If the score is below 70, you MUST provide the correct, complete answer based strictly on the excerpts in the "correctAnswer" field. ` +
                     `Return STRICT JSON only, no markdown: {"score": <0-100>, "strengths": [..], "improvements": [..], "verdict": "<one sentence>", "correctAnswer": "<string>"}`;
                 const user = `QUESTION: ${question}\n\nTHESIS EXCERPTS:\n"""${chunkText.slice(0, 3000)}"""\n\n` +
                     `STUDENT ANSWER:\n"""${answer.slice(0, 1000)}"""\n\n` +
-                    `Score the answer from 0 to 100 based on: relevance to the question, accuracy compared to the excerpts, completeness, and defense quality.`;
+                    `Score the answer from 0 to 100 based on: relevance to the question, accuracy compared to the excerpts, and defense quality. Do not penalize for short answers.`;
                 const reply = await callLLM(system, user, 1500); // Increased to 1500 to prevent truncated JSON
                 if (!reply) throw new Error('AI returned an empty evaluation response.');
                 
@@ -1604,7 +1627,7 @@
                 if (s.phase === 'question') {
                     inputHTML = `
                     <div class="chat-input-area">
-                        <textarea id="answerInput" placeholder="Type your defense answer here..."></textarea>
+                        <textarea id="answerInput" placeholder="Type your answer here (1-2 sentences, English or Tagalog)..."></textarea>
                         <button class="btn ghost" id="skipBtn" title="Skip (counts as 0)">Skip</button>
                         <button class="btn danger" id="endBtn">End Defense</button>
                         <button class="btn primary" id="submitAnswer">Send</button>
