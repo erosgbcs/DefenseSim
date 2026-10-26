@@ -45,75 +45,72 @@
         const EXAMINERS = [
         {
             id: 'methodology', name: 'Dr. Reyes', role: 'Methodology', avatar: '🔬',
-            focus: ['method', 'procedure', 'instrument', 'sampling', 'validation', 'participant', 'scope', 'limitation', 'delimitation'],
+            focus: ['method', 'procedure', 'scope', 'limitation', 'transaction', 'atomic', 'queue', 'validation', 'testing'],
             questionTemplates: [
-            'What are the specific scope and limitations of your study? What did you intentionally exclude and why?',
-            'How do the limitations of your methodology affect the generalizability of your findings?',
-            'Walk me through the exact {keyword} you used in your study. Why did you choose it over alternatives?',
-            'You mention "{keyword}" — what is your justification for this design decision?',
-            'How did you establish the reliability and validity of your {keyword}?',
+            'What are the specific scope and limitations of your study, particularly regarding the offline queue and server-side rendering?',
+            'Explain how you implemented atomic stock deduction using runTransaction(). What happens to stock if a sale fails midway?',
+            'Walk me through your testing approach. What specific edge cases did you test for variant-selection and offline-to-online transitions?',
+            'You mention "{keyword}" — what is your justification for this specific design decision in your system architecture?',
             'If you were to redo this study, would you keep the same {keyword}? Why or why not?',
             ],
             followUpTemplates: [],
         },
         {
             id: 'literature', name: 'Dr. Villanueva', role: 'Literature & Frameworks', avatar: '📚',
-            focus: ['theory', 'framework', 'literature', 'study', 'author', 'model', 'conceptual', 'background', 'context', 'problem'],
+            focus: ['theory', 'framework', 'literature', 'background', 'context', 'problem', 'P1', 'P15', 'manual'],
             questionTemplates: [
-            'Can you explain the background of your study and what led you to this specific research problem?',
-            'What gap in the literature or context justifies the background of your study?',
+            'Can you explain the background of your study and the specific operational pains of Kirby\'s Hardware that led to this research?',
+            'How does your system address the 15 specific problems (P1-P15) identified in your problem statement?',
+            'You referenced the capital cost barrier of commercial POS systems. How does your serverless architecture solve this?',
             'You reference "{keyword}" — can you explain how this directly anchors your study?',
-            'Which theoretical framework did you adopt for {keyword}, and why not another?',
-            'What gap in the literature justifies your {keyword}?',
             'How does your study extend or contradict the existing literature on {keyword}?',
             ],
             followUpTemplates: [],
         },
         {
             id: 'application', name: 'Dr. Santos', role: 'Practical Application', avatar: '🛠',
-            focus: ['implication', 'recommendation', 'contribution', 'practical', 'beneficiary', 'industry'],
+            focus: ['implication', 'recommendation', 'contribution', 'practical', 'beneficiary', 'cashier', 'owner', 'hardware'],
             questionTemplates: [
-            'Beyond the academe, who specifically benefits from your findings on "{keyword}"?',
-            'What is the concrete real-world implication of your {keyword}?',
-            'You claim contribution via "{keyword}" — can you quantify that?',
-            'What policy or industry recommendation follows from your {keyword}?',
+            'What is the concrete real-world implication of your 7-day revenue forecast for a small hardware store owner?',
+            'How does the system reduce checkout time and errors for cashiers compared to the carbon-copy method?',
+            'Who specifically benefits from the AI Assistant "Kirby", and how does it practically help with restocking?',
+            'You claim contribution via "{keyword}" — can you quantify that impact for a local hardware store?',
             ],
             followUpTemplates: [],
         },
         {
             id: 'statistics', name: 'Dr. Lim', role: 'Statistics & Results', avatar: '📊',
-            focus: ['result', 'significance', 'p-value', 'correlation', 'regression', 'data', 'analysis', 'table'],
+            focus: ['result', 'forecast', 'mape', 'interval', 'regression', 'data', 'analysis', 'accuracy'],
             questionTemplates: [
-            'Your results mention "{keyword}" — walk me through the statistical basis for that claim.',
-            'What test did you use to evaluate {keyword}? Why is it appropriate?',
-            'How do you rule out alternative explanations for the {keyword} you observed?',
-            'If I challenged your {keyword}, what evidence in your study defends it?',
+            'Walk me through the statistical basis for your 7-day revenue forecast. Why did you choose 95% prediction intervals?',
+            'How do you evaluate the accuracy of your forecasting models using rolling-origin cross-validation and MAPE?',
+            'What happens to your forecasting accuracy if the store has sparse historical data, such as operating for only three weeks?',
+            'If I challenged your forecasting model, what evidence in your study defends it?',
             ],
             followUpTemplates: [],
         },
         {
             id: 'novelty', name: 'Dr. Navarro', role: 'Novelty & Contribution', avatar: '💡',
-            focus: ['novel', 'original', 'contribution', 'unique', 'first', 'innovation', 'gap'],
+            focus: ['novel', 'original', 'contribution', 'unique', 'hybrid', 'routing', 'serverless'],
             questionTemplates: [
-            'What exactly is novel about your {keyword}, and how is it different from prior work?',
+            'What exactly is novel about your hybrid NLP and LLM routing for the Kirby assistant?',
+            'If your study were rejected for lack of novelty, how would you defend the combination of an offline-first POS and statistical forecasting?',
             'State your single most important contribution to knowledge related to "{keyword}".',
-            'If your study were rejected for lack of novelty, how would you defend {keyword}?',
             'What did you do that no one has done before regarding the {keyword}?',
             ],
             followUpTemplates: [],
         },
         {
             id: 'technical', name: 'Dr. Cruz', role: 'Technical Implementation', avatar: '💻',
-            focus: ['system', 'development', 'framework', 'database', 'deployment', 'language', 'frontend', 'backend', 'technology', 'stack', 'javascript', 'python', 'firebase', 'firestore'],
+            focus: ['system', 'javascript', 'python', 'firebase', 'firestore', 'gemini', 'groq', 'variant', 'matrix'],
             questionTemplates: [
-            'Why did you build your application in vanilla JavaScript (ES2022) without a front-end framework like React, Vue, or Angular?',
-            'What specific data-science libraries in Python 3.11 did you use for your forecasting module?',
-            'Why did you choose Cloud Firestore over a relational database for your persistent application data?',
-            'Can you explain how you implemented real-time synchronization and offline persistence using the Firestore client SDK?',
-            'Can you walk me through the purpose of the five primary collections in your Firestore database?',
-            'What deployment platform did you choose for your Python serverless functions, and why?',
+            'Why did you build your application in vanilla JavaScript (ES2022) without React, Vue, or Angular?',
+            'Explain how your application-level localStorage.pos_order_queue syncs with Firestore when connectivity returns.',
+            'Walk me through how you modeled the 0/1/2 option group variant matrix in Firestore. How do you prevent overselling on variants?',
+            'How did you implement role-based access control (Admin vs Cashier) at both the UI and Firestore security rule layers?',
+            'What specific data-science libraries in Python 3.11 did you use for your forecasting module, and how did you deploy them to Vercel?',
+            'Why did you choose Gemini as primary and Groq as fallback for your AI assistant, and how did you isolate provider errors?',
             'Why did you choose {keyword} for your system architecture?',
-            'How did you handle security and data privacy in your {keyword}?'
             ],
             followUpTemplates: [],
         },
@@ -1040,8 +1037,9 @@
         const system = `You are ${examiner.name}, a strict thesis defense panelist specializing in ${examiner.role}. ` +
             `${chapterCtx}` +
             `Read the provided thesis excerpt carefully. ` +
-            `Ask ONE highly specific, challenging defense question based STRICTLY on the details, facts, and concepts written in the excerpt. ` +
-            `Do not ask generic questions. Probe the student's exact methodology, findings, or reasoning mentioned in the text. ` +
+            `This project is "Kirby's Hardware POS", a Vanilla JS/Python serverless system with Firestore offline queues, a variant matrix, and AI forecasting. ` +
+            `Ask ONE highly specific, challenging defense question based STRICTLY on the technical details, statistics, or architectural claims written in the excerpt. ` +
+            `Do not ask generic questions. Probe the student's exact methodology, tech stack (e.g., Firestore, Gemini, Groq), findings, or reasoning mentioned in the text. ` +
             `You may ask the question in English or Tagalog/Taglish. ` +
             `Keep it under 45 words. Return plain text only, no quotes.`;
         const user = `THESIS EXCERPT:\n"""${chunkText.slice(0, 3000)}"""\n\n` +
@@ -1054,7 +1052,8 @@
         if (!state.settings.useLLM || !state.settings.apiKey) return null;
         const system = `You are a strict but fair thesis defense panelist. ` +
             `You must evaluate the student's answer STRICTLY based on the provided thesis excerpts. ` +
-            `If the student invents facts or contradicts the excerpts, penalize the score heavily. ` +
+            `The thesis is about a POS system using Vanilla JS, Python, Firestore, and Gemini/Groq. ` +
+            `If the student invents facts, contradicts the excerpts, or gives vague generic answers instead of technical specifics from their own document, penalize the score heavily. ` +
             `The student may answer in English, Tagalog, or Taglish. Understand the answer regardless of language. ` +
             `Provide your feedback (strengths, improvements, verdict) in the SAME language the student used. ` +
             `If the score is below 70, you MUST provide the correct, complete answer based strictly on the excerpts in the "correctAnswer" field. ` +
